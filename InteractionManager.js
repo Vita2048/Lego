@@ -139,7 +139,8 @@ export class InteractionManager {
 
                         if (this.placedBricks.includes(targetBrick)) {
                             const targetBbox = new THREE.Box3().setFromObject(targetBrick);
-                            y = targetBbox.max.y;
+                            // Subtract stud height so studs interlock with brick above
+                            y = targetBbox.max.y - this.studHeight;
                         } else {
                             // Fallback: use hit point
                             y = hit.point.y;
@@ -193,7 +194,8 @@ export class InteractionManager {
 
                         if (this.placedBricks.includes(targetBrick)) {
                             const targetBbox = new THREE.Box3().setFromObject(targetBrick);
-                            y = targetBbox.max.y;
+                            // Subtract stud height so studs interlock with brick above
+                            y = targetBbox.max.y - this.studHeight;
                         } else {
                             y = hit.point.y;
                         }
