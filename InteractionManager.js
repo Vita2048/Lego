@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 
 export class InteractionManager {
-    constructor(scene, camera, canvas, brickManager) {
+    constructor(scene, camera, canvas, brickManager, orbitControls = null) {
         this.scene = scene;
         this.camera = camera;
         this.canvas = canvas;
         this.brickManager = brickManager;
+        this.orbitControls = orbitControls;
 
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
@@ -13,9 +14,10 @@ export class InteractionManager {
         this.ghostBrick = null;
         this.placedBricks = []; // Array of meshes placed in the scene
 
-        this.mode = 'select'; // 'select' | 'place' | 'drag'
+        this.mode = 'select'; // 'select' | 'place' | 'drag' | 'gizmo-drag'
         this.selectedObject = null;
         this.selectionBoxHelper = null;
+        this.selectionOutline = null; // For edge highlighting
 
         // Stud grid settings (will be configured by setStudGrid)
         this.studSpacing = 0.8; // Distance between stud centers
@@ -33,7 +35,16 @@ export class InteractionManager {
         this.draggedObject = null;
         this.dragGhost = null;
 
+        // Transform gizmo
+        this.gizmo = null;
+        this.gizmoArrows = { x: null, y: null, z: null };
+        this.gizmoCenterHandle = null;
+        this.activeGizmoAxis = null; // 'x', 'y', 'z', or 'center'
+        this.gizmoDragStart = new THREE.Vector3();
+        this.objectDragStart = new THREE.Vector3();
+
         this.initEvents();
+        this.createGizmo();
     }
 
     // Configure stud grid settings from baseplate
@@ -105,6 +116,139 @@ export class InteractionManager {
         this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
         this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
         window.addEventListener('keydown', (e) => this.onKeyDown(e));
+    }
+
+    createGizmo() {
+        // Create a group to hold all gizmo elements
+        this.gizmo = new THREE.Group();
+        this.gizmo.name = 'TransformGizmo';
+        this.gizmo.visible = false;
+
+        const arrowLength = 1.5;
+        const arrowHeadLength = 0.3;
+        const arrowHeadWidth = 0.15;
+
+        // Create arrow helpers for each axis
+        // X axis - Red
+        const xDir = new THREE.Vector3(1, 0, 0);
+        const xArrow = new THREE.ArrowHelper(xDir, new THREE.Vector3(0, 0, 0), arrowLength, 0xff0000, arrowHeadLength, arrowHeadWidth);
+        xArrow.name = 'gizmo-x';
+        xArrow.userData.axis = 'x';
+        this.gizmoArrows.x = xArrow;
+        this.gizmo.add(xArrow);
+
+        // Y axis - Green
+        const yDir = new THREE.Vector3(0, 1, 0);
+        const yArrow = new THREE.ArrowHelper(yDir, new THREE.Vector3(0, 0, 0), arrowLength, 0x00ff00, arrowHeadLength, arrowHeadWidth);
+        yArrow.name = 'gizmo-y';
+        yArrow.userData.axis = 'y';
+        this.gizmoArrows.y = yArrow;
+        this.gizmo.add(yArrow);
+
+        // Z axis - Blue
+        const zDir = new THREE.Vector3(0, 0, 1);
+        const zArrow = new THREE.ArrowHelper(zDir, new THREE.Vector3(0, 0, 0), arrowLength, 0x0000ff, arrowHeadLength, arrowHeadWidth);
+        zArrow.name = 'gizmo-z';
+        zArrow.userData.axis = 'z';
+        this.gizmoArrows.z = zArrow;
+        this.gizmo.add(zArrow);
+
+        // Center handle - White sphere
+        const centerGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+        const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        this.gizmoCenterHandle = new THREE.Mesh(centerGeometry, centerMaterial);
+        this.gizmoCenterHandle.name = 'gizmo-center';
+        this.gizmoCenterHandle.userData.axis = 'center';
+        this.gizmo.add(this.gizmoCenterHandle);
+
+        this.scene.add(this.gizmo);
+    }
+
+    showGizmo(object) {
+        if (!object || !this.gizmo) return;
+
+        // Position gizmo at object's center
+        const bbox = new THREE.Box3().setFromObject(object);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+
+        this.gizmo.position.copy(center);
+        this.gizmo.visible = true;
+
+        // Create edge outline for the selected object
+        this.createSelectionOutline(object);
+    }
+
+    createSelectionOutline(object) {
+        // Remove existing outline
+        this.removeSelectionOutline();
+
+        // Create a BoxHelper for edge highlighting
+        this.selectionOutline = new THREE.BoxHelper(object, 0x00ffff); // Cyan color
+        this.selectionOutline.name = 'SelectionOutline';
+        this.scene.add(this.selectionOutline);
+    }
+
+    removeSelectionOutline() {
+        if (this.selectionOutline) {
+            this.scene.remove(this.selectionOutline);
+            this.selectionOutline = null;
+        }
+    }
+
+    updateSelectionOutline() {
+        if (this.selectionOutline && this.selectedObject) {
+            this.selectionOutline.update();
+        }
+    }
+
+    hideGizmo() {
+        if (this.gizmo) {
+            this.gizmo.visible = false;
+        }
+        // Also remove edge outline
+        this.removeSelectionOutline();
+    }
+
+    updateGizmoPosition() {
+        if (this.selectedObject && this.gizmo && this.gizmo.visible) {
+            const bbox = new THREE.Box3().setFromObject(this.selectedObject);
+            const center = new THREE.Vector3();
+            bbox.getCenter(center);
+            this.gizmo.position.copy(center);
+
+            // Update selection outline too
+            this.updateSelectionOutline();
+        }
+    }
+
+    getGizmoIntersection() {
+        if (!this.gizmo || !this.gizmo.visible) return null;
+
+        // Collect all gizmo parts for raycasting
+        const gizmoParts = [];
+
+        // Add arrow line and cone parts
+        this.gizmo.traverse((child) => {
+            if (child.isMesh || child.isLine) {
+                gizmoParts.push(child);
+            }
+        });
+
+        const intersects = this.raycaster.intersectObjects(gizmoParts, false);
+
+        if (intersects.length > 0) {
+            // Find the axis from the parent hierarchy
+            let obj = intersects[0].object;
+            while (obj && !obj.userData.axis) {
+                obj = obj.parent;
+            }
+            if (obj && obj.userData.axis) {
+                return obj.userData.axis;
+            }
+        }
+
+        return null;
     }
 
     setMode(mode) {
@@ -202,15 +346,54 @@ export class InteractionManager {
 
                 this.dragGhost.position.set(x, y, z);
             }
+        } else if (this.mode === 'gizmo-drag' && this.selectedObject && this.activeGizmoAxis) {
+            // Gizmo drag mode - move object along the active axis
+            this.canvas.style.cursor = 'grabbing';
+
+            // Get current mouse position on ground plane
+            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const currentPoint = new THREE.Vector3();
+            this.raycaster.ray.intersectPlane(groundPlane, currentPoint);
+
+            if (currentPoint) {
+                const delta = new THREE.Vector3().subVectors(currentPoint, this.gizmoDragStart);
+
+                if (this.activeGizmoAxis === 'x') {
+                    // Only move in X
+                    this.selectedObject.position.x = this.objectDragStart.x + delta.x;
+                } else if (this.activeGizmoAxis === 'y') {
+                    // Move in Y (use mouse Y movement scaled)
+                    // For Y axis, use vertical mouse movement
+                    const yDelta = -delta.z * 0.5; // Use Z movement on ground as proxy for Y
+                    this.selectedObject.position.y = Math.max(0, this.objectDragStart.y + yDelta);
+                } else if (this.activeGizmoAxis === 'z') {
+                    // Only move in Z
+                    this.selectedObject.position.z = this.objectDragStart.z + delta.z;
+                } else if (this.activeGizmoAxis === 'center') {
+                    // Move in XZ freely
+                    this.selectedObject.position.x = this.objectDragStart.x + delta.x;
+                    this.selectedObject.position.z = this.objectDragStart.z + delta.z;
+                }
+
+                // Update gizmo position to follow object
+                this.updateGizmoPosition();
+            }
         } else if (this.mode === 'select') {
-            // Select mode - check for hover over selectable objects
+            // Select mode - check for hover over gizmo or objects
             this.canvas.style.cursor = 'default';
+
+            // Check gizmo hover first
+            const gizmoAxis = this.getGizmoIntersection();
+            if (gizmoAxis) {
+                this.canvas.style.cursor = 'grab';
+                return;
+            }
 
             if (this.selectedObject) {
                 // Check if hovering over selected object
                 const intersects = this.raycaster.intersectObjects([this.selectedObject], true);
                 if (intersects.length > 0) {
-                    this.canvas.style.cursor = 'grab';
+                    this.canvas.style.cursor = 'pointer';
                 }
             } else {
                 // Check if hovering over any placed brick for selection
@@ -244,15 +427,33 @@ export class InteractionManager {
             this.endDragMode();
         } else if (this.mode === 'select') {
             this.raycaster.setFromCamera(this.mouse, this.camera);
+
+            // First check if clicking on gizmo
+            const gizmoAxis = this.getGizmoIntersection();
+            if (gizmoAxis) {
+                // Don't do anything on click - gizmo is handled by mousedown/mousemove
+                return;
+            }
+
+            // Check if clicking on a brick
             const intersects = this.raycaster.intersectObjects(this.placedBricks, true);
 
             if (intersects.length > 0) {
-                const hitBrick = this.placedBricks.find(b => b === intersects[0].object);
-                if (hitBrick) {
-                    this.startDragMode(hitBrick);
+                // Find the actual brick (not child mesh)
+                let hitBrick = intersects[0].object;
+                while (hitBrick.parent && !this.placedBricks.includes(hitBrick)) {
+                    hitBrick = hitBrick.parent;
+                }
+
+                if (this.placedBricks.includes(hitBrick)) {
+                    // Select the brick and show gizmo
+                    this.selectedObject = hitBrick;
+                    this.showGizmo(hitBrick);
                 }
             } else {
+                // Clicked empty space - deselect
                 this.deselectObject();
+                this.hideGizmo();
             }
         }
     }
@@ -388,20 +589,63 @@ export class InteractionManager {
     }
 
     onMouseDown(event) {
-        if (this.mode === 'select') {
-            this.raycaster.setFromCamera(this.mouse, this.camera);
-            const intersects = this.raycaster.intersectObjects(this.placedBricks, true);
+        this.updateMouse(event);
+        this.raycaster.setFromCamera(this.mouse, this.camera);
 
-            if (intersects.length > 0) {
-                const hitBrick = this.placedBricks.find(b => b === intersects[0].object);
-                if (hitBrick) {
-                    this.startDragMode(hitBrick);
+        if (this.mode === 'select' && this.selectedObject) {
+            // Check if clicking on gizmo
+            const gizmoAxis = this.getGizmoIntersection();
+            if (gizmoAxis) {
+                // Start gizmo drag
+                this.mode = 'gizmo-drag';
+                this.activeGizmoAxis = gizmoAxis;
+                this.objectDragStart.copy(this.selectedObject.position);
+
+                // Get start position on the appropriate plane
+                const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+                const startPoint = new THREE.Vector3();
+                this.raycaster.ray.intersectPlane(groundPlane, startPoint);
+                this.gizmoDragStart.copy(startPoint);
+
+                this.canvas.style.cursor = 'grabbing';
+
+                // Disable orbit controls during gizmo drag
+                if (this.orbitControls) {
+                    this.orbitControls.enabled = false;
                 }
+                return;
             }
         }
     }
 
     onMouseUp(event) {
+        if (this.mode === 'gizmo-drag') {
+            // Snap the final position to stud grid (only XZ, keep Y exactly where user placed it)
+            if (this.selectedObject) {
+                const snapped = this.snapToStudGrid(
+                    this.selectedObject.position.x,
+                    this.selectedObject.position.z,
+                    this.selectedObject
+                );
+                this.selectedObject.position.x = snapped.x;
+                this.selectedObject.position.z = snapped.z;
+
+                // Keep Y exactly where user placed it, just ensure not below ground
+                this.selectedObject.position.y = Math.max(0, this.selectedObject.position.y);
+
+                // Update gizmo and outline position
+                this.updateGizmoPosition();
+            }
+
+            this.mode = 'select';
+            this.activeGizmoAxis = null;
+
+            // Re-enable orbit controls
+            if (this.orbitControls) {
+                this.orbitControls.enabled = true;
+            }
+        }
+
         this.isDragging = false;
         this.canvas.style.cursor = 'default';
     }

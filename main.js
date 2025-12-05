@@ -38,7 +38,7 @@ scene.add(dirLight);
 
 // Managers
 const brickManager = new BrickManager(scene);
-const interactionManager = new InteractionManager(scene, camera, renderer.domElement, brickManager);
+const interactionManager = new InteractionManager(scene, camera, renderer.domElement, brickManager, controls);
 
 // UI Integration
 const brickMenu = document.getElementById('brick-menu');
