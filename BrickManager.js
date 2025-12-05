@@ -62,6 +62,20 @@ export class BrickManager {
           // 2x2 brick spans 2 studs, so divide by 2
           this.studSpacing = Math.min(size.x, size.z) / 2;
           this.brickHeight = size.y;
+
+          // Calculate stud height dynamically based on standard LEGO ratios
+          // Standard Brick: 9.6mm body, 1.7mm stud. Ratio body/width(8mm) = 1.2
+          const expectedBodyHeight = this.studSpacing * 1.2;
+          const calculatedStudHeight = size.y - expectedBodyHeight;
+
+          // Validate and apply if reasonable (between 0.1 and 0.4 units)
+          if (calculatedStudHeight > 0.05 && calculatedStudHeight < 0.5) {
+            this.studHeight = calculatedStudHeight;
+            console.log('Dynamic studHeight detected:', this.studHeight);
+          } else {
+            console.warn('Calculated studHeight unreasonable:', calculatedStudHeight, 'Using default:', this.studHeight);
+          }
+
           console.log('Calculated stud spacing:', this.studSpacing, 'brick height:', this.brickHeight);
         }
       }

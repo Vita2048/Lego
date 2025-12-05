@@ -43,8 +43,23 @@ export class InteractionManager {
         this.gizmoDragStart = new THREE.Vector3();
         this.objectDragStart = new THREE.Vector3();
 
+        // Callbacks for UI
+        this.onBrickAdded = null;
+        this.onBrickRemoved = null;
+        this.onSelectionChanged = null;
+
         this.initEvents();
         this.createGizmo();
+    }
+
+    // Select object by UUID (for UI list)
+    selectObjectByUuid(uuid) {
+        const object = this.placedBricks.find(b => b.uuid === uuid);
+        if (object) {
+            this.setMode('select');
+            this.selectObject(object);
+            this.showGizmo(object);
+        }
     }
 
     // Configure stud grid settings from baseplate
@@ -294,14 +309,12 @@ export class InteractionManager {
         this.gizmo.visible = true;
 
         // Create edge outline for the selected object
-        // TEMPORARILY DISABLED FOR DEBUGGING
-        /*
+        // Create edge outline for the selected object
         try {
             this.createSelectionOutline(object);
         } catch (e) {
             console.error('Failed to create selection outline:', e);
         }
-        */
 
         console.log('Gizmo position:', this.gizmo.position);
 
@@ -584,6 +597,10 @@ export class InteractionManager {
             this.scene.add(newBrick);
             this.placedBricks.push(newBrick);
             console.log('onClick: Brick placed. New count:', this.placedBricks.length, 'Brick:', newBrick);
+
+            if (this.onBrickAdded) {
+                this.onBrickAdded(newBrick);
+            }
         } else if (this.mode === 'drag') {
             // End drag mode - place the brick at the ghost's position (already calculated correctly)
             if (this.dragGhost && this.draggedObject) {
@@ -721,11 +738,18 @@ export class InteractionManager {
         // Add visual helper
         this.selectionBoxHelper = new THREE.BoxHelper(object, 0xffff00); // Yellow highlight
         this.scene.add(this.selectionBoxHelper);
+
+        if (this.onSelectionChanged) {
+            this.onSelectionChanged(object ? object.uuid : null);
+        }
     }
 
     deselectObject() {
         if (this.selectedObject) {
             this.selectedObject = null;
+            if (this.onSelectionChanged) {
+                this.onSelectionChanged(null);
+            }
         }
         if (this.selectionBoxHelper) {
             this.scene.remove(this.selectionBoxHelper);
@@ -735,9 +759,14 @@ export class InteractionManager {
 
     deleteSelected() {
         if (this.selectedObject) {
+            const uuid = this.selectedObject.uuid;
             this.scene.remove(this.selectedObject);
             this.placedBricks = this.placedBricks.filter(b => b !== this.selectedObject);
             this.deselectObject();
+
+            if (this.onBrickRemoved) {
+                this.onBrickRemoved(uuid);
+            }
         }
     }
 

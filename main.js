@@ -11,7 +11,7 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 camera.position.set(30, 30, 30);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth - 250, window.innerHeight); // Adjust for sidebar
+renderer.setSize(window.innerWidth - 500, window.innerHeight); // Adjust for 2 sidebars (250px each)
 renderer.shadowMap.enabled = true;
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
@@ -129,7 +129,7 @@ brickManager.loadBricks('/scene.gltf');
 
 // Handle resize
 window.addEventListener('resize', () => {
-    const width = window.innerWidth - 250;
+    const width = window.innerWidth - 500; // Adjust for left and right sidebars (250 + 250)
     const height = window.innerHeight;
 
     camera.aspect = width / height;
@@ -137,6 +137,64 @@ window.addEventListener('resize', () => {
 
     renderer.setSize(width, height);
 });
+
+// UI List Logic
+const placedBricksList = document.getElementById('placed-bricks-list');
+
+function createBrickListItem(brick) {
+    const li = document.createElement('li');
+    li.className = 'placed-brick-item';
+    li.dataset.uuid = brick.uuid;
+
+    // Create label with name and coordinates hint
+    const label = document.createElement('span');
+    label.textContent = brick.name;
+
+    const coordHint = document.createElement('span');
+    coordHint.className = 'coord-hint';
+    const x = Math.round(brick.position.x * 10) / 10;
+    const z = Math.round(brick.position.z * 10) / 10;
+    coordHint.textContent = `(${x}, ${z})`;
+
+    li.appendChild(label);
+    li.appendChild(coordHint);
+
+    li.addEventListener('click', (e) => {
+        e.stopPropagation();
+        interactionManager.selectObjectByUuid(brick.uuid);
+    });
+
+    return li;
+}
+
+// Subscribe to InteractionManager events
+interactionManager.onBrickAdded = (brick) => {
+    const li = createBrickListItem(brick);
+    placedBricksList.appendChild(li);
+};
+
+interactionManager.onBrickRemoved = (uuid) => {
+    const li = placedBricksList.querySelector(`li[data-uuid="${uuid}"]`);
+    if (li) {
+        li.remove();
+    }
+};
+
+interactionManager.onSelectionChanged = (selectedUuid) => {
+    // Remove selection from all items
+    document.querySelectorAll('.placed-brick-item').forEach(el => el.classList.remove('selected'));
+
+    if (selectedUuid) {
+        const li = placedBricksList.querySelector(`li[data-uuid="${selectedUuid}"]`);
+        if (li) {
+            li.classList.add('selected');
+            li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+};
+
+// Initial resize to fit layout
+window.dispatchEvent(new Event('resize'));
 
 // Animation Loop
 function animate() {
