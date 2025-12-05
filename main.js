@@ -5,10 +5,10 @@ import { InteractionManager } from './InteractionManager.js';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff); // White canvas
+scene.background = new THREE.Color(0x87ceeb); // Light sky blue background
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(10, 10, 10);
+camera.position.set(30, 30, 30);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth - 250, window.innerHeight); // Adjust for sidebar
@@ -24,22 +24,17 @@ const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Soft white light
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-dirLight.position.set(10, 20, 10);
+dirLight.position.set(30, 50, 30);
 dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 200;
+dirLight.shadow.camera.left = -50;
+dirLight.shadow.camera.right = 50;
+dirLight.shadow.camera.top = 50;
+dirLight.shadow.camera.bottom = -50;
 scene.add(dirLight);
-
-// Ground Plane
-const planeGeometry = new THREE.PlaneGeometry(100, 100);
-const planeMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-plane.rotation.x = -Math.PI / 2;
-plane.receiveShadow = true;
-plane.name = 'Ground';
-scene.add(plane);
-
-// Grid Helper
-const gridHelper = new THREE.GridHelper(100, 100);
-scene.add(gridHelper);
 
 // Managers
 const brickManager = new BrickManager(scene);
@@ -87,6 +82,18 @@ sidebar.insertBefore(controlsContainer, brickMenu);
 
 
 brickManager.onBricksLoaded = (brickNames) => {
+    // Create the 60x60 stud white baseplate
+    const baseplateInfo = brickManager.createBaseplate(60, 60);
+    console.log('Baseplate created:', baseplateInfo);
+
+    // Configure InteractionManager with stud grid settings
+    interactionManager.setStudGrid(
+        brickManager.studSpacing,
+        brickManager.studHeight,
+        baseplateInfo.startX,
+        baseplateInfo.startZ
+    );
+
     brickMenu.innerHTML = ''; // Clear loading text if any
 
     brickNames.forEach(name => {

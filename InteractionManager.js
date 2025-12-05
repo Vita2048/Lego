@@ -17,11 +17,14 @@ export class InteractionManager {
         this.selectedObject = null;
         this.selectionBoxHelper = null;
 
-        // Grid settings
-        this.gridSize = 1;
+        // Stud grid settings (will be configured by setStudGrid)
+        this.studSpacing = 0.8; // Distance between stud centers
+        this.studHeight = 0.17; // Height of studs for interlocking
+        this.gridStartX = 0; // Starting X position of stud grid
+        this.gridStartZ = 0; // Starting Z position of stud grid
 
-        // Lego brick dimensions - stud height for proper stacking
-        this.studHeight = 0.17; // Height of the stud that should interlock
+        // Legacy grid size (replaced by studSpacing)
+        this.gridSize = this.studSpacing;
 
         // Drag state
         this.isDragging = false;
@@ -31,6 +34,69 @@ export class InteractionManager {
         this.dragGhost = null;
 
         this.initEvents();
+    }
+
+    // Configure stud grid settings from baseplate
+    setStudGrid(studSpacing, studHeight, startX, startZ) {
+        this.studSpacing = studSpacing;
+        this.studHeight = studHeight;
+        this.gridStartX = startX;
+        this.gridStartZ = startZ;
+        this.gridSize = studSpacing; // Keep legacy property in sync
+        console.log('Stud grid configured:', { studSpacing, studHeight, startX, startZ });
+    }
+
+    // Snap a position to the stud grid, accounting for brick dimensions
+    // For even-sized bricks (2x2, 2x4), the center is between studs
+    // For odd-sized bricks (1x2), the center is at a stud
+    snapToStudGrid(x, z, brickMesh = null) {
+        // Calculate offset from grid start
+        const offsetX = x - this.gridStartX;
+        const offsetZ = z - this.gridStartZ;
+
+        // Determine if the brick has even or odd stud counts in X and Z
+        let evenStudsX = true; // Default to even (most bricks are 2xN)
+        let evenStudsZ = true;
+
+        if (brickMesh) {
+            const bbox = new THREE.Box3().setFromObject(brickMesh);
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+
+            // Calculate number of studs in each direction (rounded to nearest integer)
+            const studsX = Math.round(size.x / this.studSpacing);
+            const studsZ = Math.round(size.z / this.studSpacing);
+
+            evenStudsX = studsX % 2 === 0;
+            evenStudsZ = studsZ % 2 === 0;
+        }
+
+        // Snap to nearest stud position
+        // For even stud counts, snap to between studs (add 0.5 offset)
+        // For odd stud counts, snap directly to stud positions
+        let studX, studZ;
+
+        if (evenStudsX) {
+            // Even: center should be between studs
+            studX = Math.round(offsetX / this.studSpacing - 0.5) + 0.5;
+        } else {
+            // Odd: center should be at a stud
+            studX = Math.round(offsetX / this.studSpacing);
+        }
+
+        if (evenStudsZ) {
+            // Even: center should be between studs
+            studZ = Math.round(offsetZ / this.studSpacing - 0.5) + 0.5;
+        } else {
+            // Odd: center should be at a stud
+            studZ = Math.round(offsetZ / this.studSpacing);
+        }
+
+        // Convert back to world coordinates
+        return {
+            x: this.gridStartX + studX * this.studSpacing,
+            z: this.gridStartZ + studZ * this.studSpacing
+        };
     }
 
     initEvents() {
@@ -106,47 +172,13 @@ export class InteractionManager {
             this.raycaster.ray.intersectPlane(groundPlane, groundPoint);
 
             if (groundPoint) {
-                // Grid snap for x and z
-                const x = Math.round(groundPoint.x / this.gridSize) * this.gridSize;
-                const z = Math.round(groundPoint.z / this.gridSize) * this.gridSize;
+                // Snap to stud grid (pass brick for dimension-aware snapping)
+                const snapped = this.snapToStudGrid(groundPoint.x, groundPoint.z, this.ghostBrick);
+                const x = snapped.x;
+                const z = snapped.z;
 
-                // Step 2: Cast a downward ray from high above to find the surface height at this XZ
-                const highPoint = new THREE.Vector3(x, 100, z); // Start from high above
-                const downRay = new THREE.Raycaster(highPoint, new THREE.Vector3(0, -1, 0));
-
-                // Get all objects except ghost and helpers
-                const surfaceObjects = this.scene.children.filter(obj =>
-                    obj !== this.ghostBrick &&
-                    obj.visible &&
-                    obj !== this.selectionBoxHelper &&
-                    obj !== this.dragGhost
-                );
-
-                const hits = downRay.intersectObjects(surfaceObjects, true);
-                let y = 0; // Default to ground
-
-                if (hits.length > 0) {
-                    const hit = hits[0];
-
-                    if (hit.object.name === 'Ground') {
-                        y = 0;
-                    } else {
-                        // Hit a brick - find its bounding box and place on top
-                        let targetBrick = hit.object;
-                        while (targetBrick.parent && !this.placedBricks.includes(targetBrick)) {
-                            targetBrick = targetBrick.parent;
-                        }
-
-                        if (this.placedBricks.includes(targetBrick)) {
-                            const targetBbox = new THREE.Box3().setFromObject(targetBrick);
-                            // Subtract stud height so studs interlock with brick above
-                            y = targetBbox.max.y - this.studHeight;
-                        } else {
-                            // Fallback: use hit point
-                            y = hit.point.y;
-                        }
-                    }
-                }
+                // Step 2: Find the lowest valid Y position at this XZ
+                const y = this.findLowestValidY(x, z, this.ghostBrick);
 
                 this.ghostBrick.position.set(x, y, z);
             }
@@ -160,47 +192,13 @@ export class InteractionManager {
             this.raycaster.ray.intersectPlane(groundPlane, groundPoint);
 
             if (groundPoint) {
-                // Grid snap for x and z
-                const x = Math.round(groundPoint.x / this.gridSize) * this.gridSize;
-                const z = Math.round(groundPoint.z / this.gridSize) * this.gridSize;
+                // Snap to stud grid (pass brick for dimension-aware snapping)
+                const snapped = this.snapToStudGrid(groundPoint.x, groundPoint.z, this.dragGhost);
+                const x = snapped.x;
+                const z = snapped.z;
 
-                // Step 2: Cast a downward ray from high above to find the surface height at this XZ
-                const highPoint = new THREE.Vector3(x, 100, z);
-                const downRay = new THREE.Raycaster(highPoint, new THREE.Vector3(0, -1, 0));
-
-                // Get all objects except ghosts and the brick being dragged
-                const surfaceObjects = this.scene.children.filter(obj =>
-                    obj !== this.dragGhost &&
-                    obj.visible &&
-                    obj !== this.selectionBoxHelper &&
-                    obj !== this.ghostBrick &&
-                    obj !== this.draggedObject
-                );
-
-                const hits = downRay.intersectObjects(surfaceObjects, true);
-                let y = 0; // Default to ground
-
-                if (hits.length > 0) {
-                    const hit = hits[0];
-
-                    if (hit.object.name === 'Ground') {
-                        y = 0;
-                    } else {
-                        // Hit a brick - find its bounding box and place on top
-                        let targetBrick = hit.object;
-                        while (targetBrick.parent && !this.placedBricks.includes(targetBrick)) {
-                            targetBrick = targetBrick.parent;
-                        }
-
-                        if (this.placedBricks.includes(targetBrick)) {
-                            const targetBbox = new THREE.Box3().setFromObject(targetBrick);
-                            // Subtract stud height so studs interlock with brick above
-                            y = targetBbox.max.y - this.studHeight;
-                        } else {
-                            y = hit.point.y;
-                        }
-                    }
-                }
+                // Step 2: Find the lowest valid Y position at this XZ (excluding dragged object)
+                const y = this.findLowestValidY(x, z, this.dragGhost, this.draggedObject);
 
                 this.dragGhost.position.set(x, y, z);
             }
@@ -446,5 +444,44 @@ export class InteractionManager {
         }
 
         return false; // No collision
+    }
+
+    // Find the lowest valid Y position for placing a brick at a given XZ coordinate
+    findLowestValidY(x, z, brickToPlace, excludeBrick = null) {
+        // Get the bounding box of the brick to place (to know its footprint)
+        const brickBox = new THREE.Box3().setFromObject(brickToPlace);
+        const brickSize = new THREE.Vector3();
+        brickBox.getSize(brickSize);
+
+        // Create a test box at the target XZ position at ground level
+        const halfWidth = brickSize.x / 2;
+        const halfDepth = brickSize.z / 2;
+
+        // Find all bricks that overlap in XZ
+        let highestY = 0; // Start at ground level
+
+        for (const brick of this.placedBricks) {
+            if (brick === excludeBrick) continue; // Skip the brick being dragged
+
+            const otherBox = new THREE.Box3().setFromObject(brick);
+
+            // Check XZ overlap (with small tolerance)
+            const tolerance = 0.01;
+            const overlapX = !(x + halfWidth <= otherBox.min.x + tolerance ||
+                x - halfWidth >= otherBox.max.x - tolerance);
+            const overlapZ = !(z + halfDepth <= otherBox.min.z + tolerance ||
+                z - halfDepth >= otherBox.max.z - tolerance);
+
+            if (overlapX && overlapZ) {
+                // This brick overlaps in XZ, we need to stack on top of it
+                // Subtract stud height for interlocking
+                const stackY = otherBox.max.y - this.studHeight;
+                if (stackY > highestY) {
+                    highestY = stackY;
+                }
+            }
+        }
+
+        return highestY;
     }
 }
