@@ -140,6 +140,20 @@ window.addEventListener('resize', () => {
 
 // UI List Logic
 const placedBricksList = document.getElementById('placed-bricks-list');
+const groupBtn = document.getElementById('group-btn');
+const ungroupBtn = document.getElementById('ungroup-btn');
+
+let lastSelectedUuid = null;
+
+function formatBrickName(name) {
+    if (name === 'Group') return 'Group';
+    // Match "Brick_2x4_Red" -> "2x4 Red"
+    const match = name.match(/Brick_(\d+x\d+)_(.+)/);
+    if (match) {
+        return `${match[1]} ${match[2]}`;
+    }
+    return name;
+}
 
 function createBrickListItem(brick) {
     const li = document.createElement('li');
@@ -148,50 +162,135 @@ function createBrickListItem(brick) {
 
     // Create label with name and coordinates hint
     const label = document.createElement('span');
-    label.textContent = brick.name;
+    label.textContent = formatBrickName(brick.name);
 
+    // Minimal hint for groups or bricks
     const coordHint = document.createElement('span');
     coordHint.className = 'coord-hint';
     const x = Math.round(brick.position.x * 10) / 10;
     const z = Math.round(brick.position.z * 10) / 10;
     coordHint.textContent = `(${x}, ${z})`;
 
-    li.appendChild(label);
-    li.appendChild(coordHint);
+    const contentDiv = document.createElement('div');
+    contentDiv.style.display = 'flex';
+    contentDiv.style.justifyContent = 'space-between';
+    contentDiv.style.width = '100%';
+    contentDiv.appendChild(label);
+    contentDiv.appendChild(coordHint);
+
+    li.appendChild(contentDiv);
+
+    // If it's a group, add children container
+    if (brick.name === 'Group' && brick.children.length > 0) {
+        const ul = document.createElement('ul');
+        ul.style.paddingLeft = '15px';
+        ul.style.listStyle = 'none';
+        ul.style.marginTop = '5px';
+
+        brick.children.forEach(child => {
+            if (child.isMesh || child.isGroup) {
+                ul.appendChild(createBrickListItem(child));
+            }
+        });
+        li.appendChild(ul);
+    }
 
     li.addEventListener('click', (e) => {
         e.stopPropagation();
-        interactionManager.selectObjectByUuid(brick.uuid);
+
+        if (e.shiftKey && lastSelectedUuid) {
+            // Shift+Click: Range Selection
+            const allItems = Array.from(document.querySelectorAll('.placed-brick-item'));
+            const lastIdx = allItems.findIndex(el => el.dataset.uuid === lastSelectedUuid);
+            const currentIdx = allItems.findIndex(el => el.dataset.uuid === brick.uuid);
+
+            if (lastIdx !== -1 && currentIdx !== -1) {
+                const start = Math.min(lastIdx, currentIdx);
+                const end = Math.max(lastIdx, currentIdx);
+                const rangeItems = allItems.slice(start, end + 1);
+                const uuids = rangeItems.map(el => el.dataset.uuid);
+
+                interactionManager.selectObjectsByUuids(uuids);
+            }
+        } else if (e.ctrlKey || e.metaKey) {
+            // Ctrl+Click: Toggle
+            interactionManager.toggleSelectionByUuid(brick.uuid);
+            lastSelectedUuid = brick.uuid; // Update anchor
+        } else {
+            // Single Click
+            interactionManager.selectObjectByUuid(brick.uuid);
+            lastSelectedUuid = brick.uuid; // Update anchor
+        }
     });
 
     return li;
 }
 
+function renderBrickList() {
+    placedBricksList.innerHTML = '';
+
+    // Only render top-level placed bricks
+    interactionManager.placedBricks.forEach(brick => {
+        const li = createBrickListItem(brick);
+        placedBricksList.appendChild(li);
+    });
+}
+
 // Subscribe to InteractionManager events
 interactionManager.onBrickAdded = (brick) => {
-    const li = createBrickListItem(brick);
-    placedBricksList.appendChild(li);
+    // Re-render entire list to handle hierarchy changes safely
+    renderBrickList();
 };
 
 interactionManager.onBrickRemoved = (uuid) => {
-    const li = placedBricksList.querySelector(`li[data-uuid="${uuid}"]`);
-    if (li) {
-        li.remove();
-    }
+    // Re-render entire list
+    renderBrickList();
 };
 
-interactionManager.onSelectionChanged = (selectedUuid) => {
+interactionManager.onSelectionChanged = (selectedUuids) => {
     // Remove selection from all items
     document.querySelectorAll('.placed-brick-item').forEach(el => el.classList.remove('selected'));
 
-    if (selectedUuid) {
-        const li = placedBricksList.querySelector(`li[data-uuid="${selectedUuid}"]`);
+    // selectedUuids is now an Array (or empty array)
+    const uuids = Array.isArray(selectedUuids) ? selectedUuids : (selectedUuids ? [selectedUuids] : []);
+    const selectedCount = uuids.length;
+    let anyGroupSelected = false;
+
+    uuids.forEach(uuid => {
+        const li = document.querySelector(`li[data-uuid="${uuid}"]`);
         if (li) {
             li.classList.add('selected');
-            li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (uuids.indexOf(uuid) === 0) {
+                // li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Update last selected if single selection (to sync external changes)
+            if (uuids.length === 1) lastSelectedUuid = uuid;
         }
-    }
+
+        const obj = interactionManager.placedBricks.find(b => b.uuid === uuid);
+        if (obj && obj.name === 'Group') {
+            anyGroupSelected = true;
+        }
+    });
+
+    // Update button states
+    if (groupBtn) groupBtn.disabled = selectedCount < 2;
+    if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
 };
+
+// Button Handlers
+if (groupBtn) {
+    groupBtn.onclick = () => {
+        interactionManager.groupSelected();
+    };
+}
+
+if (ungroupBtn) {
+    ungroupBtn.onclick = () => {
+        interactionManager.ungroupSelected();
+    };
+}
 
 // Initial resize to fit layout
 window.dispatchEvent(new Event('resize'));
