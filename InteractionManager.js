@@ -13,6 +13,8 @@ export class InteractionManager {
         this.selectedBrickName = null;
         this.ghostBrick = null;
         this.placedBricks = []; // Array of meshes placed in the scene
+        this.tempBox = new THREE.Box3();
+        this.tempVector = new THREE.Vector3();
 
         this.mode = 'select'; // 'select' | 'place' | 'drag' | 'gizmo-drag'
         this.selectedObjects = new Set(); // Multi-selection support
@@ -207,8 +209,14 @@ export class InteractionManager {
                 const newBrick = this.brickManager.getBrick(this.selectedBrickName);
                 if (newBrick) {
                     // Position and rotate the new brick
-                    newBrick.position.set(snapped.x, this.studHeight, snapped.z);
+                    newBrick.position.set(snapped.x, 0, snapped.z);
                     newBrick.rotation.copy(this.ghostBrick.rotation);
+
+                    // Check for volumetric overlaps and find best placement
+                    const finalPosition = this.findValidPlacementPosition(newBrick);
+
+                    // Apply the final position
+                    newBrick.position.copy(finalPosition);
 
                     this.scene.add(newBrick);
                     this.placedBricks.push(newBrick);
@@ -322,7 +330,11 @@ export class InteractionManager {
                 const snapped = this.snapToStudGrid(intersectionPoint.x, intersectionPoint.z, this.ghostBrick);
 
                 // Position the ghost brick
-                this.ghostBrick.position.set(snapped.x, this.studHeight, snapped.z);
+                this.ghostBrick.position.set(snapped.x, 0, snapped.z);
+
+                // Check for volumetric overlaps and adjust ghost position
+                const validPosition = this.findValidPlacementPosition(this.ghostBrick);
+                this.ghostBrick.position.copy(validPosition);
 
                 // Make ghost brick visible if it's not already
                 if (!this.ghostBrick.visible) {
@@ -595,6 +607,142 @@ export class InteractionManager {
             x: this.gridStartX + studX * this.studSpacing,
             z: this.gridStartZ + studZ * this.studSpacing
         };
+    }
+
+    // Check if two boxes overlap volumetrically
+    checkBoxOverlap(box1, box2) {
+        return box1.intersectsBox(box2);
+    }
+
+    // Find the highest non-overlapping position for stacking
+    findStackingPosition(brick, targetX, targetZ) {
+        // Create box for the brick at target position
+        const brickBox = new THREE.Box3();
+        brick.position.set(targetX, 0, targetZ);
+        brick.updateMatrixWorld();
+        brickBox.setFromObject(brick);
+
+        let maxY = 0; // Start at ground level (y=0)
+
+        // Check all placed bricks for potential stacking
+        for (const placedBrick of this.placedBricks) {
+            if (placedBrick === brick) continue;
+
+            // Create box for placed brick
+            const placedBox = new THREE.Box3();
+            placedBrick.updateMatrixWorld();
+            placedBox.setFromObject(placedBrick);
+
+            // Check if they overlap in XZ plane (ignoring Y)
+            const brickBox2D = new THREE.Box3();
+            brickBox2D.min.copy(brickBox.min);
+            brickBox2D.max.copy(brickBox.max);
+            brickBox2D.min.y = -Infinity;
+            brickBox2D.max.y = Infinity;
+
+            const placedBox2D = new THREE.Box3();
+            placedBox2D.min.copy(placedBox.min);
+            placedBox2D.max.copy(placedBox.max);
+            placedBox2D.min.y = -Infinity;
+            placedBox2D.max.y = Infinity;
+
+            // They overlap in XZ, check if we can stack on top
+            // For proper LEGO stacking, we need to account for the brick's height
+            // Subtract studHeight to allow interlocking
+            const topOfPlacedBrick = placedBox.max.y - this.studHeight;
+            if (topOfPlacedBrick > maxY) {
+                maxY = topOfPlacedBrick;
+            }
+        }
+
+        // For LEGO bricks, the stacking should be tight - no gap
+        // The brick's own geometry will handle the stud/tube connection
+        return maxY;
+    }
+
+    // Snap studs of the new brick to studs of the existing brick below
+    snapStudsToBrick(newBrick, baseBrick, targetX, targetZ) {
+        // Get the stud spacing from the interaction manager
+        const studSpacing = this.studSpacing;
+
+        // Create boxes for both bricks
+        const newBrickBox = new THREE.Box3();
+        newBrick.position.set(targetX, 0, targetZ);
+        newBrick.updateMatrixWorld();
+        newBrickBox.setFromObject(newBrick);
+
+        const baseBrickBox = new THREE.Box3();
+        baseBrick.updateMatrixWorld();
+        baseBrickBox.setFromObject(baseBrick);
+
+        // Calculate the center positions
+        const newBrickCenter = new THREE.Vector3();
+        newBrickBox.getCenter(newBrickCenter);
+
+        const baseBrickCenter = new THREE.Vector3();
+        baseBrickBox.getCenter(baseBrickCenter);
+
+        // Calculate the offset between centers
+        const xOffset = newBrickCenter.x - baseBrickCenter.x;
+        const zOffset = newBrickCenter.z - baseBrickCenter.z;
+
+        // Snap to nearest stud position
+        const snappedX = baseBrickCenter.x + Math.round(xOffset / studSpacing) * studSpacing;
+        const snappedZ = baseBrickCenter.z + Math.round(zOffset / studSpacing) * studSpacing;
+
+        return new THREE.Vector3(snappedX, newBrickCenter.y, snappedZ);
+    }
+
+    // Find valid placement position considering overlaps and stacking
+    findValidPlacementPosition(brick) {
+        // Create bounding box for the brick at its current position
+        const brickBox = new THREE.Box3();
+        brick.updateMatrixWorld();
+        brickBox.setFromObject(brick);
+
+        // Check for overlaps with existing bricks
+        let hasOverlap = false;
+        let bestY = brick.position.y;
+        let stackingBrick = null;
+
+        for (const placedBrick of this.placedBricks) {
+            if (placedBrick === brick) continue;
+
+            const placedBox = new THREE.Box3();
+            placedBrick.updateMatrixWorld();
+            placedBox.setFromObject(placedBrick);
+
+            if (this.checkBoxOverlap(brickBox, placedBox)) {
+                hasOverlap = true;
+                // Try stacking on top of this brick
+                const stackY = this.findStackingPosition(brick, brick.position.x, brick.position.z);
+                if (stackY > bestY) {
+                    bestY = stackY;
+                    stackingBrick = placedBrick;
+                }
+            }
+        }
+
+        // If no overlap, ensure placement as close to canvas as possible
+        if (!hasOverlap) {
+            // Place at ground level (closest to canvas)
+            const result = brick.position.clone();
+            result.y = 0; // Place at ground level (y=0)
+            return result;
+        }
+
+        // If we have a stacking brick, try to snap studs together
+        if (stackingBrick) {
+            const snappedPosition = this.snapStudsToBrick(brick, stackingBrick, brick.position.x, brick.position.z);
+            const result = snappedPosition.clone();
+            result.y = bestY;
+            return result;
+        }
+
+        // Return the best stacking position
+        const result = brick.position.clone();
+        result.y = bestY;
+        return result;
     }
 
     initEvents() {
