@@ -19,7 +19,6 @@ export class InteractionManager {
         this.mode = 'select'; // 'select' | 'place' | 'drag' | 'gizmo-drag'
         this.selectedObjects = new Set(); // Multi-selection support
         this.selectionBoxHelpers = new Map(); // Map object UUID -> BoxHelper
-        // this.selectionOutline = null; // Replaced by mapping
 
         // Stud grid settings (will be configured by setStudGrid)
         this.studSpacing = 0.8; // Distance between stud centers
@@ -120,8 +119,6 @@ export class InteractionManager {
         }
     }
 
-    // ... (setStudGrid, snapToStudGrid, initEvents, createGizmo... UNCHANGED) ...
-
     showGizmo() {
         if (this.selectedObjects.size === 0 || !this.gizmo) {
             this.hideGizmo();
@@ -159,8 +156,6 @@ export class InteractionManager {
         console.log('Gizmo shown at center:', center);
     }
 
-    // Removed legacy createSelectionOutline/remove etc. using Map now
-
     updateGizmoPosition() {
         if (this.selectedObjects.size > 0 && this.gizmo && this.gizmo.visible) {
             const center = new THREE.Vector3();
@@ -188,8 +183,6 @@ export class InteractionManager {
             this.selectionBoxHelpers.forEach(helper => helper.update());
         }
     }
-
-    // ... (setMode, selectBrick, removeGhost... UNCHANGED) ...
 
     onClick(event) {
         if (this.mode === 'place') {
@@ -293,21 +286,27 @@ export class InteractionManager {
                 });
 
                 // Get start position on the appropriate plane
-                const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Approx
-                // Better plane logic: passing through gizmo center, facing camera?
-                // For now, simple horizontal plane at gizmo height
-                const gizmoPos = this.gizmo.position.clone();
-                const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -gizmoPos.y);
-                // Note: Plane distance is negative dot product of normal and point on plane. 
-                // But simplified: intersectPlane expects plane constant.
-                // Revert to ground plane logic for XZ movement, careful with Y.
+                if (this.activeGizmoAxis === 'y') {
+                    // For Y-axis, use a plane facing the camera to allow vertical drag
+                    const normal = new THREE.Vector3();
+                    this.camera.getWorldDirection(normal);
+                    normal.y = 0;
+                    normal.normalize();
+                    if (normal.lengthSq() < 0.1) normal.set(0, 0, 1);
+                    this.dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, this.gizmo.position);
+                } else {
+                    // For X/Z, use the ground plane
+                    this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+                }
 
                 const startPoint = new THREE.Vector3();
-                this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), startPoint);
-                this.gizmoDragStart.copy(startPoint);
+                this.raycaster.ray.intersectPlane(this.dragPlane, startPoint);
 
-                this.canvas.style.cursor = 'grabbing';
-                if (this.orbitControls) this.orbitControls.enabled = false;
+                if (startPoint) {
+                    this.gizmoDragStart.copy(startPoint);
+                    this.canvas.style.cursor = 'grabbing';
+                    if (this.orbitControls) this.orbitControls.enabled = false;
+                }
                 return;
             }
         }
@@ -340,16 +339,12 @@ export class InteractionManager {
                 if (!this.ghostBrick.visible) {
                     this.ghostBrick.visible = true;
                 }
-
-                // Update ghost brick rotation based on keyboard state
-                // (rotation is handled by 'r' key in onKeyDown)
             }
         }
-        else if (this.mode === 'gizmo-drag' && this.selectedObjects.size > 0 && this.activeGizmoAxis) {
+        else if (this.mode === 'gizmo-drag' && this.selectedObjects.size > 0 && this.activeGizmoAxis && this.dragPlane) {
             this.canvas.style.cursor = 'grabbing';
-            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
             const currentPoint = new THREE.Vector3();
-            this.raycaster.ray.intersectPlane(groundPlane, currentPoint);
+            this.raycaster.ray.intersectPlane(this.dragPlane, currentPoint);
 
             if (currentPoint) {
                 const delta = new THREE.Vector3().subVectors(currentPoint, this.gizmoDragStart);
@@ -364,7 +359,7 @@ export class InteractionManager {
                     if (this.activeGizmoAxis === 'x') {
                         newPosition.x += delta.x;
                     } else if (this.activeGizmoAxis === 'y') {
-                        newPosition.y = Math.max(0, originalPos.y + -delta.z * 0.5); // Valid approximation
+                        newPosition.y += delta.y;
                     } else if (this.activeGizmoAxis === 'z') {
                         newPosition.z += delta.z;
                     } else if (this.activeGizmoAxis === 'center') {
@@ -372,8 +367,20 @@ export class InteractionManager {
                         newPosition.z += delta.z;
                     }
 
-                    // Collision check? Complicated for multi-selection.
-                    // For now, allow move, snap at end.
+                    // Snap to grid immediately during drag for visual feedback
+                    const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
+                    newPosition.x = snapped.x;
+                    newPosition.z = snapped.z;
+
+                    // Clamping logic: Ensure no part of the geometry goes below 0
+                    obj.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(obj);
+                    const currentBottomOffset = box.min.y - obj.position.y;
+
+                    if (newPosition.y + currentBottomOffset < 0) {
+                        newPosition.y = 0 - currentBottomOffset;
+                    }
+
                     obj.position.copy(newPosition);
                 });
 
@@ -381,7 +388,13 @@ export class InteractionManager {
             }
         }
 
-        // ... (Highlight Hover Logic UNCHANGED) ...
+        // Gizmo Highlight Logic
+        if (this.mode === 'select' || (this.mode === 'gizmo-drag' && !this.isDragging)) {
+            const axis = this.getGizmoIntersection();
+            this.highlightGizmoAxis(axis);
+        } else {
+            this.resetGizmoHighlight();
+        }
     }
 
     onMouseUp(event) {
@@ -389,9 +402,19 @@ export class InteractionManager {
             // Snap ALL objects
             this.selectedObjects.forEach(obj => {
                 const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
-                obj.position.x = snapped.x;
-                obj.position.z = snapped.z;
-                obj.position.y = Math.max(0, obj.position.y);
+
+                // Correctly calculate offset so object sits ON the floor, not IN it
+                obj.updateMatrixWorld(true);
+                const box = new THREE.Box3().setFromObject(obj);
+                const bottomOffset = obj.position.y - box.min.y;
+
+                // Preserve current Y (user placement), but ensure it doesn't go below ground
+                // We'll let findValidPlacementPosition handle the floor clamp, 
+                // here we just ensure we don't reset to 0 blindly.
+                obj.position.set(snapped.x, obj.position.y, snapped.z);
+
+                const validPos = this.findValidPlacementPosition(obj);
+                obj.position.copy(validPos);
             });
 
             this.updateGizmoPosition();
@@ -417,9 +440,6 @@ export class InteractionManager {
             this.scene.add(helper);
             this.selectionBoxHelpers.set(object.uuid, helper);
         }
-
-        // TEMPORARY: Disabled cyan outline via createSelectionOutline for now, 
-        // relying on BoxHelper (yellow) which is reliable.
 
         this.showGizmo();
 
@@ -611,7 +631,15 @@ export class InteractionManager {
 
     // Check if two boxes overlap volumetrically
     checkBoxOverlap(box1, box2) {
-        return box1.intersectsBox(box2);
+        const intersection = box1.clone().intersect(box2);
+        if (intersection.isEmpty()) return false;
+
+        const size = new THREE.Vector3();
+        intersection.getSize(size);
+
+        // Allow touching faces by ignoring tiny overlaps
+        const epsilon = 1e-4;
+        return size.x > epsilon && size.y > epsilon && size.z > epsilon;
     }
 
     // Find the highest non-overlapping position for stacking
@@ -646,12 +674,14 @@ export class InteractionManager {
             placedBox2D.min.y = -Infinity;
             placedBox2D.max.y = Infinity;
 
-            // They overlap in XZ, check if we can stack on top
-            // For proper LEGO stacking, we need to account for the brick's height
-            // Subtract studHeight to allow interlocking
-            const topOfPlacedBrick = placedBox.max.y - this.studHeight;
-            if (topOfPlacedBrick > maxY) {
-                maxY = topOfPlacedBrick;
+            if (brickBox2D.intersectsBox(placedBox2D)) {
+                // They overlap in XZ, check if we can stack on top
+                // For proper LEGO stacking, we need to account for the brick's height
+                // Subtract studHeight to allow interlocking
+                const topOfPlacedBrick = placedBox.max.y - this.studHeight;
+                if (topOfPlacedBrick > maxY) {
+                    maxY = topOfPlacedBrick;
+                }
             }
         }
 
@@ -725,9 +755,18 @@ export class InteractionManager {
 
         // If no overlap, ensure placement as close to canvas as possible
         if (!hasOverlap) {
-            // Place at ground level (closest to canvas)
+            // Keep current height, but ensure it doesn't go below ground
             const result = brick.position.clone();
-            result.y = 0; // Place at ground level (y=0)
+
+            // Calculate offset to keep bottom at y=0
+            const box = new THREE.Box3().setFromObject(brick);
+            const bottomOffset = brick.position.y - box.min.y;
+
+            // If the bottom is below 0, snap to 0. Otherwise keep it.
+            if (result.y < bottomOffset) {
+                result.y = bottomOffset;
+            }
+
             return result;
         }
 
@@ -735,13 +774,23 @@ export class InteractionManager {
         if (stackingBrick) {
             const snappedPosition = this.snapStudsToBrick(brick, stackingBrick, brick.position.x, brick.position.z);
             const result = snappedPosition.clone();
-            result.y = bestY;
+
+            // Calculate offset to keep bottom at bestY
+            const box = new THREE.Box3().setFromObject(brick);
+            const bottomOffset = brick.position.y - box.min.y;
+
+            result.y = bestY + bottomOffset;
             return result;
         }
 
         // Return the best stacking position
+
+        // Calculate offset to keep bottom at bestY
+        const box = new THREE.Box3().setFromObject(brick);
+        const bottomOffset = brick.position.y - box.min.y;
+
         const result = brick.position.clone();
-        result.y = bestY;
+        result.y = bestY + bottomOffset;
         return result;
     }
 
