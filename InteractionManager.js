@@ -153,7 +153,6 @@ export class InteractionManager {
 
         this.gizmo.position.copy(center);
         this.gizmo.visible = true;
-        console.log('Gizmo shown at center:', center);
     }
 
     updateGizmoPosition() {
@@ -278,6 +277,7 @@ export class InteractionManager {
                 // Start gizmo drag
                 this.mode = 'gizmo-drag';
                 this.activeGizmoAxis = gizmoAxis;
+                this.isDragging = true;
 
                 // Store original positions of ALL selected objects
                 this.objectDragStarts.clear();
@@ -285,19 +285,8 @@ export class InteractionManager {
                     this.objectDragStarts.set(obj.uuid, obj.position.clone());
                 });
 
-                // Get start position on the appropriate plane
-                if (this.activeGizmoAxis === 'y') {
-                    // For Y-axis, use a plane facing the camera to allow vertical drag
-                    const normal = new THREE.Vector3();
-                    this.camera.getWorldDirection(normal);
-                    normal.y = 0;
-                    normal.normalize();
-                    if (normal.lengthSq() < 0.1) normal.set(0, 0, 1);
-                    this.dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, this.gizmo.position);
-                } else {
-                    // For X/Z, use the ground plane
-                    this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-                }
+                // Use the ground plane for all axes to allow proper delta calculation
+                this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
                 const startPoint = new THREE.Vector3();
                 this.raycaster.ray.intersectPlane(this.dragPlane, startPoint);
@@ -367,21 +356,18 @@ export class InteractionManager {
                         newPosition.z += delta.z;
                     }
 
-                    // Snap to grid immediately during drag for visual feedback
+                    // Snap to grid immediately during drag
                     const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
                     newPosition.x = snapped.x;
                     newPosition.z = snapped.z;
 
-                    // Clamping logic: Ensure no part of the geometry goes below 0
-                    obj.updateMatrixWorld(true);
-                    const box = new THREE.Box3().setFromObject(obj);
-                    const currentBottomOffset = box.min.y - obj.position.y;
-
-                    if (newPosition.y + currentBottomOffset < 0) {
-                        newPosition.y = 0 - currentBottomOffset;
-                    }
-
+                    // Apply the new approximate position first so we can check it
                     obj.position.copy(newPosition);
+
+                    // Skip collision detection during drag to prevent jumping.
+                    // Validation will be applied on mouse up.
+                    // const validPos = this.findValidPlacementPosition(obj);
+                    // obj.position.copy(validPos);
                 });
 
                 this.updateGizmoPosition();
@@ -399,22 +385,21 @@ export class InteractionManager {
 
     onMouseUp(event) {
         if (this.mode === 'gizmo-drag') {
-            // Snap ALL objects
+            // Because onMouseMove now handles the heavy lifting of collision and stacking,
+            // we simply need to ensure the gizmo is updated and state is reset.
+            // The position is already valid.
+
             this.selectedObjects.forEach(obj => {
+                // One final sanity check to ensure grid alignment
                 const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
-
-                // Correctly calculate offset so object sits ON the floor, not IN it
-                obj.updateMatrixWorld(true);
-                const box = new THREE.Box3().setFromObject(obj);
-                const bottomOffset = obj.position.y - box.min.y;
-
-                // Preserve current Y (user placement), but ensure it doesn't go below ground
-                // We'll let findValidPlacementPosition handle the floor clamp, 
-                // here we just ensure we don't reset to 0 blindly.
-                obj.position.set(snapped.x, obj.position.y, snapped.z);
-
+                obj.position.x = snapped.x;
+                obj.position.z = snapped.z;
+                
+                // Re-validate strictly one last time to ensure no slight drifts
                 const validPos = this.findValidPlacementPosition(obj);
                 obj.position.copy(validPos);
+                
+                console.log("Brick dropped at:", obj.position);
             });
 
             this.updateGizmoPosition();
@@ -631,14 +616,15 @@ export class InteractionManager {
 
     // Check if two boxes overlap volumetrically
     checkBoxOverlap(box1, box2) {
-        const intersection = box1.clone().intersect(box2);
+        // Shrink boxes slightly to avoid detecting touching faces as overlap
+        const epsilon = 0.01; // Increased from 1e-4 to 0.01 to reduce sensitivity
+        const intersection = box1.clone().expandByScalar(-epsilon).intersect(box2.clone().expandByScalar(-epsilon));
+
         if (intersection.isEmpty()) return false;
 
         const size = new THREE.Vector3();
         intersection.getSize(size);
 
-        // Allow touching faces by ignoring tiny overlaps
-        const epsilon = 1e-4;
         return size.x > epsilon && size.y > epsilon && size.z > epsilon;
     }
 
@@ -674,6 +660,11 @@ export class InteractionManager {
             placedBox2D.min.y = -Infinity;
             placedBox2D.max.y = Infinity;
 
+            // Expand boxes slightly to account for floating point errors
+            const epsilon = 0.001;
+            brickBox2D.expandByScalar(epsilon);
+            placedBox2D.expandByScalar(epsilon);
+
             if (brickBox2D.intersectsBox(placedBox2D)) {
                 // They overlap in XZ, check if we can stack on top
                 // For proper LEGO stacking, we need to account for the brick's height
@@ -685,8 +676,6 @@ export class InteractionManager {
             }
         }
 
-        // For LEGO bricks, the stacking should be tight - no gap
-        // The brick's own geometry will handle the stud/tube connection
         return maxY;
     }
 
@@ -732,8 +721,12 @@ export class InteractionManager {
 
         // Check for overlaps with existing bricks
         let hasOverlap = false;
-        let bestY = brick.position.y;
+        let bestY = 0; // Default to ground
         let stackingBrick = null;
+        
+        // Calculate ground offset
+        const box = new THREE.Box3().setFromObject(brick);
+        const bottomOffset = brick.position.y - box.min.y;
 
         for (const placedBrick of this.placedBricks) {
             if (placedBrick === brick) continue;
@@ -744,6 +737,7 @@ export class InteractionManager {
 
             if (this.checkBoxOverlap(brickBox, placedBox)) {
                 hasOverlap = true;
+                
                 // Try stacking on top of this brick
                 const stackY = this.findStackingPosition(brick, brick.position.x, brick.position.z);
                 if (stackY > bestY) {
@@ -753,45 +747,155 @@ export class InteractionManager {
             }
         }
 
-        // If no overlap, ensure placement as close to canvas as possible
+        // Case 1: No overlap, clean placement
         if (!hasOverlap) {
-            // Keep current height, but ensure it doesn't go below ground
             const result = brick.position.clone();
-
-            // Calculate offset to keep bottom at y=0
-            const box = new THREE.Box3().setFromObject(brick);
-            const bottomOffset = brick.position.y - box.min.y;
-
-            // If the bottom is below 0, snap to 0. Otherwise keep it.
+            // Ensure not below ground
             if (result.y < bottomOffset) {
                 result.y = bottomOffset;
             }
-
             return result;
         }
 
-        // If we have a stacking brick, try to snap studs together
+        // Case 2: Overlap detected, but valid stacking is available
         if (stackingBrick) {
+            // We found a brick we can stack on.
+            // Snap studs to it
             const snappedPosition = this.snapStudsToBrick(brick, stackingBrick, brick.position.x, brick.position.z);
             const result = snappedPosition.clone();
-
-            // Calculate offset to keep bottom at bestY
-            const box = new THREE.Box3().setFromObject(brick);
-            const bottomOffset = brick.position.y - box.min.y;
-
             result.y = bestY + bottomOffset;
+            
             return result;
         }
 
-        // Return the best stacking position
+        // Case 3: Overlap detected, and NO valid stacking possible (e.g. intersecting sideways)
+        // Find nearest free spot on the ground (or current Y)
+        const originalY = brick.position.y;
+        const result = this.findNonOverlappingPosition(brick, originalY);
 
-        // Calculate offset to keep bottom at bestY
-        const box = new THREE.Box3().setFromObject(brick);
-        const bottomOffset = brick.position.y - box.min.y;
+        if (result) {
+            return result;
+        }
 
-        const result = brick.position.clone();
-        result.y = bestY + bottomOffset;
-        return result;
+        // Fallback: Force stack if we can't slide anywhere else
+        const resultFallback = brick.position.clone();
+        resultFallback.y = bestY + bottomOffset;
+        return resultFallback;
+    }
+
+    // Find a non-overlapping position at the same Y level
+    findNonOverlappingPosition(brick, targetY) {
+        const originalPos = brick.position.clone();
+        const brickBox = new THREE.Box3();
+        brick.updateMatrixWorld();
+        brickBox.setFromObject(brick);
+
+        // Calculate brick dimensions
+        const brickSize = new THREE.Vector3();
+        brickBox.getSize(brickSize);
+
+        // Generate candidate positions in a spiral pattern around the original position
+        const candidates = [];
+        const maxSearchRadius = 5; // studs
+
+        // Try positions in expanding spiral pattern
+        for (let radius = 1; radius <= maxSearchRadius; radius++) {
+            for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                const xOffset = Math.round(Math.cos(angle) * radius);
+                const zOffset = Math.round(Math.sin(angle) * radius);
+
+                // Skip (0,0) as that's the original position
+                if (xOffset === 0 && zOffset === 0) continue;
+
+                const candidateX = originalPos.x + xOffset * this.studSpacing;
+                const candidateZ = originalPos.z + zOffset * this.studSpacing;
+
+                candidates.push({x: candidateX, z: candidateZ});
+            }
+        }
+
+        // Also try immediate neighbors (more thoroughly)
+        const immediateNeighbors = [
+            {x: originalPos.x + this.studSpacing, z: originalPos.z},
+            {x: originalPos.x - this.studSpacing, z: originalPos.z},
+            {x: originalPos.x, z: originalPos.z + this.studSpacing},
+            {x: originalPos.x, z: originalPos.z - this.studSpacing},
+            {x: originalPos.x + this.studSpacing, z: originalPos.z + this.studSpacing},
+            {x: originalPos.x + this.studSpacing, z: originalPos.z - this.studSpacing},
+            {x: originalPos.x - this.studSpacing, z: originalPos.z + this.studSpacing},
+            {x: originalPos.x - this.studSpacing, z: originalPos.z - this.studSpacing}
+        ];
+
+        // Add immediate neighbors to the beginning of candidates to try them first
+        candidates.unshift(...immediateNeighbors);
+
+        // Test each candidate position
+        for (const candidate of candidates) {
+            // Temporarily move brick to candidate position
+            brick.position.set(candidate.x, targetY, candidate.z);
+            brick.updateMatrixWorld();
+
+            // Create box at candidate position
+            const candidateBox = new THREE.Box3();
+            candidateBox.setFromObject(brick);
+
+            let hasOverlap = false;
+
+            // Check against all placed bricks
+            for (const placedBrick of this.placedBricks) {
+                if (placedBrick === brick) continue;
+
+                const placedBox = new THREE.Box3();
+                placedBrick.updateMatrixWorld();
+                placedBox.setFromObject(placedBrick);
+
+                if (this.checkBoxOverlap(candidateBox, placedBox)) {
+                    hasOverlap = true;
+                    break;
+                }
+            }
+
+            // If no overlap found, this is a valid position
+            if (!hasOverlap) {
+                // Snap to stud grid
+                const snapped = this.snapToStudGrid(candidate.x, candidate.z, brick);
+
+                // Calculate proper Y position (keep bottom at targetY level)
+                const box = new THREE.Box3().setFromObject(brick);
+                const bottomOffset = targetY - box.min.y;
+
+                return new THREE.Vector3(snapped.x, bottomOffset, snapped.z);
+            }
+        }
+
+        // If no valid position found, return null to use fallback
+        return null;
+    }
+
+    // Generate neighbor positions for sliding logic
+    generateNeighborPositions(x, z, brick) {
+        const neighbors = [
+            { x: x + this.studSpacing, z: z },
+            { x: x - this.studSpacing, z: z },
+            { x: x, z: z + this.studSpacing },
+            { x: x, z: z - this.studSpacing },
+            { x: x + this.studSpacing, z: z + this.studSpacing },
+            { x: x + this.studSpacing, z: z - this.studSpacing },
+            { x: x - this.studSpacing, z: z + this.studSpacing },
+            { x: x - this.studSpacing, z: z - this.studSpacing }
+        ];
+
+        // Add more distant neighbors for better coverage
+        for (let i = 2; i <= 3; i++) {
+            neighbors.push(
+                { x: x + i * this.studSpacing, z: z },
+                { x: x - i * this.studSpacing, z: z },
+                { x: x, z: z + i * this.studSpacing },
+                { x: x, z: z - i * this.studSpacing }
+            );
+        }
+
+        return neighbors;
     }
 
     initEvents() {
