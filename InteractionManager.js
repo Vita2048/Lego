@@ -42,6 +42,8 @@ export class InteractionManager {
         this.gizmoCenterHandle = null;
         this.activeGizmoAxis = null; // 'x', 'y', 'z', or 'center'
         this.gizmoDragStart = new THREE.Vector3();
+        this.dragStartMouse = new THREE.Vector2(); // For vertical drag sensitivity
+        this.verticalDragFactor = 1.0; // Sensitivity for vertical drag
         this.objectDragStarts = new Map(); // Map uuid -> original position
 
         // Callbacks for UI
@@ -293,6 +295,9 @@ export class InteractionManager {
 
                 if (startPoint) {
                     this.gizmoDragStart.copy(startPoint);
+                    this.dragStartMouse.copy(this.mouse);
+                    // Compute vertical drag sensitivity based on camera distance
+                    this.verticalDragFactor = this.camera.position.distanceTo(startPoint) * 0.5;
                     this.canvas.style.cursor = 'grabbing';
                     if (this.orbitControls) this.orbitControls.enabled = false;
                 }
@@ -336,7 +341,16 @@ export class InteractionManager {
             this.raycaster.ray.intersectPlane(this.dragPlane, currentPoint);
 
             if (currentPoint) {
-                const delta = new THREE.Vector3().subVectors(currentPoint, this.gizmoDragStart);
+                let delta = new THREE.Vector3();
+                if (this.activeGizmoAxis === 'y') {
+                    // Vertical drag: compute delta based on mouse Y movement
+                    const mouseDeltaY = this.mouse.y - this.dragStartMouse.y;
+                    delta.y = mouseDeltaY * this.verticalDragFactor;
+                    delta.x = 0;
+                    delta.z = 0;
+                } else {
+                    delta.subVectors(currentPoint, this.gizmoDragStart);
+                }
 
                 // Apply delta to ALL selected objects
                 this.selectedObjects.forEach(obj => {
@@ -349,6 +363,12 @@ export class InteractionManager {
                         newPosition.x += delta.x;
                     } else if (this.activeGizmoAxis === 'y') {
                         newPosition.y += delta.y;
+                        // Snap Y to vertical grid (brick height - stud height)
+                        if (this.verticalGridSize > 0) {
+                            newPosition.y = Math.round(newPosition.y / this.verticalGridSize) * this.verticalGridSize;
+                        }
+                        // Clamp to ground (Y >= 0)
+                        if (newPosition.y < 0) newPosition.y = 0;
                     } else if (this.activeGizmoAxis === 'z') {
                         newPosition.z += delta.z;
                     } else if (this.activeGizmoAxis === 'center') {
@@ -356,7 +376,7 @@ export class InteractionManager {
                         newPosition.z += delta.z;
                     }
 
-                    // Snap to grid immediately during drag
+                    // Snap X and Z to stud grid
                     const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
                     newPosition.x = snapped.x;
                     newPosition.z = snapped.z;
@@ -552,13 +572,15 @@ export class InteractionManager {
     }
 
     // Configure stud grid settings from baseplate
-    setStudGrid(studSpacing, studHeight, startX, startZ) {
+    setStudGrid(studSpacing, studHeight, startX, startZ, brickHeight = 0.96) {
         this.studSpacing = studSpacing;
         this.studHeight = studHeight;
+        this.brickHeight = brickHeight;
+        this.verticalGridSize = brickHeight - studHeight; // Height of brick body (without stud)
         this.gridStartX = startX;
         this.gridStartZ = startZ;
         this.gridSize = studSpacing; // Keep legacy property in sync
-        console.log('Stud grid configured:', { studSpacing, studHeight, startX, startZ });
+        console.log('Stud grid configured:', { studSpacing, studHeight, brickHeight, startX, startZ });
     }
 
     // Snap a position to the stud grid, accounting for brick dimensions

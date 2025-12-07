@@ -91,7 +91,8 @@ brickManager.onBricksLoaded = (brickNames) => {
         brickManager.studSpacing,
         brickManager.studHeight,
         baseplateInfo.startX,
-        baseplateInfo.startZ
+        baseplateInfo.startZ,
+        brickManager.brickHeight
     );
 
     brickMenu.innerHTML = ''; // Clear loading text if any
