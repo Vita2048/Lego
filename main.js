@@ -103,7 +103,142 @@ brickManager.onBricksLoaded = (brickNames) => {
 
         const preview = document.createElement('div');
         preview.className = 'brick-preview';
-        preview.textContent = 'Brick'; // Placeholder
+
+        // Create a visual representation of the brick based on its name
+        const createBrickThumbnail = (brickName) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 60;
+            canvas.height = 60;
+
+            const ctx = canvas.getContext('2d');
+
+            // Parse brick name to determine size and color - handle multiple formats
+            let width = 2, depth = 2, colorName = 'Gray';
+            let match;
+
+            // Try standard format: Brick_2x4_Red
+            match = brickName.match(/Brick_(\d+)x(\d+)_(.+)/);
+            if (match) {
+                width = parseInt(match[1]);
+                depth = parseInt(match[2]);
+                colorName = match[3];
+            }
+            // Try alternative format: 2x4_Red_Brick
+            else if ((match = brickName.match(/(\d+)x(\d+)_(.+)_Brick/))) {
+                width = parseInt(match[1]);
+                depth = parseInt(match[2]);
+                colorName = match[3];
+            }
+            // Try format without "Brick": 2x4_Red
+            else if ((match = brickName.match(/(\d+)x(\d+)_(.+)/))) {
+                width = parseInt(match[1]);
+                depth = parseInt(match[2]);
+                colorName = match[3];
+            }
+            // Try format with underscore variations
+            else if ((match = brickName.match(/(\d+)x(\d+)/))) {
+                width = parseInt(match[1]);
+                depth = parseInt(match[2]);
+                // Try to extract color from remaining parts
+                const colorMatch = brickName.match(/(Red|Blue|Green|Yellow|White|Black|Gray|Orange|Purple|Pink)/i);
+                if (colorMatch) {
+                    colorName = colorMatch[1];
+                }
+            }
+
+            // Extended color mapping with more LEGO colors
+            const colorMap = {
+                'Red': '#ff0000',
+                'Blue': '#0000ff',
+                'Green': '#00ff00',
+                'Yellow': '#ffff00',
+                'White': '#ffffff',
+                'Black': '#000000',
+                'Gray': '#808080',
+                'Grey': '#808080',
+                'Orange': '#ffa500',
+                'Purple': '#800080',
+                'Pink': '#ffc0cb',
+                'Brown': '#8B4513',
+                'Tan': '#D2B48C',
+                'LightGray': '#D3D3D3',
+                'DarkGray': '#A9A9A9',
+                'Cyan': '#00FFFF',
+                'Magenta': '#FF00FF',
+                'Lime': '#00FF00',
+                'Navy': '#000080',
+                'Teal': '#008080',
+                'Olive': '#808000',
+                'Maroon': '#800000'
+            };
+
+            // Case-insensitive color lookup
+            const normalizedColor = colorName.charAt(0).toUpperCase() + colorName.slice(1).toLowerCase();
+            const brickColor = colorMap[normalizedColor] || colorMap[colorName] || '#aaaaaa';
+
+            // Draw brick representation
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(0, 0, 60, 60);
+
+            // Calculate stud positions - make more compact for better visibility
+            const studSize = 3;
+            const spacing = 6;
+            const startX = (60 - (width * spacing)) / 2;
+            const startY = (60 - (depth * spacing)) / 2;
+
+            // Draw brick body
+            ctx.fillStyle = brickColor;
+            ctx.fillRect(
+                startX - 2,
+                startY - 2,
+                width * spacing + 4,
+                depth * spacing + 4
+            );
+
+            // Draw studs
+            ctx.fillStyle = '#ffffff';
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < depth; y++) {
+                    ctx.beginPath();
+                    ctx.arc(
+                        startX + x * spacing + spacing/2,
+                        startY + y * spacing + spacing/2,
+                        studSize,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+            }
+
+            // Add some shading for 3D effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.fillRect(
+                startX - 2,
+                startY - 2,
+                width * spacing + 4,
+                2
+            );
+            ctx.fillRect(
+                startX - 2,
+                startY - 2,
+                2,
+                depth * spacing + 4
+            );
+
+            // Add brick name abbreviation for better identification
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '8px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(brickName.substring(0, 10), 30, 58);
+
+            return canvas;
+        };
+
+        // Create and add the thumbnail
+        const thumbnailCanvas = createBrickThumbnail(name);
+        preview.appendChild(thumbnailCanvas);
 
         const label = document.createElement('div');
         label.className = 'brick-name';
