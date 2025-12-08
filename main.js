@@ -426,6 +426,248 @@ if (ungroupBtn) {
 // Initial resize to fit layout
 window.dispatchEvent(new Event('resize'));
 
+// Menu functionality
+const newFileBtn = document.getElementById('new-file');
+const saveFileBtn = document.getElementById('save-file');
+const loadFileBtn = document.getElementById('load-file');
+
+newFileBtn.addEventListener('click', () => {
+    handleNewFile();
+});
+
+saveFileBtn.addEventListener('click', () => {
+    handleSaveFile();
+});
+
+loadFileBtn.addEventListener('click', () => {
+    handleLoadFile();
+});
+
+// Check if canvas has content
+function hasCanvasContent() {
+    return interactionManager.placedBricks.length > 0;
+}
+
+// Handle New File
+function handleNewFile() {
+    if (hasCanvasContent()) {
+        const saveFirst = confirm('The canvas is not empty. Do you want to save your work first?');
+        if (saveFirst) {
+            handleSaveFile(() => {
+                clearCanvas();
+            });
+        } else {
+            clearCanvas();
+        }
+    } else {
+        clearCanvas();
+    }
+}
+
+// Clear all bricks from canvas
+function clearCanvas() {
+    // Remove all placed bricks from scene
+    interactionManager.placedBricks.forEach(brick => {
+        scene.remove(brick);
+    });
+
+    // Clear the placed bricks array
+    interactionManager.placedBricks = [];
+
+    // Clear selection
+    interactionManager.deselectAll();
+
+    // Update UI
+    renderBrickList();
+}
+
+// Handle Save File
+function handleSaveFile(callback) {
+    const xmlData = serializeCanvasToXML();
+    downloadXML(xmlData, 'lego-model.xml');
+
+    if (callback) callback();
+}
+
+// Handle Load File
+function handleLoadFile() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xml';
+    input.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const xmlContent = e.target.result;
+                deserializeXMLToCanvas(xmlContent);
+            };
+            reader.readAsText(file);
+        }
+    };
+    input.click();
+}
+
+// Serialize canvas to XML
+function serializeCanvasToXML() {
+    const bricks = interactionManager.placedBricks;
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<lego-model>\n';
+
+    bricks.forEach(brick => {
+        xml += serializeBrickToXML(brick);
+    });
+
+    xml += '</lego-model>\n';
+    return xml;
+}
+
+// Serialize a single brick or group to XML
+function serializeBrickToXML(brick) {
+    let xml = '';
+
+    if (brick.isGroup) {
+        xml += `  <group name="${brick.name}" uuid="${brick.uuid}">\n`;
+        xml += `    <position x="${brick.position.x}" y="${brick.position.y}" z="${brick.position.z}" />\n`;
+        xml += `    <rotation x="${brick.rotation.x}" y="${brick.rotation.y}" z="${brick.rotation.z}" />\n`;
+        xml += `    <scale x="${brick.scale.x}" y="${brick.scale.y}" z="${brick.scale.z}" />\n`;
+
+        // Serialize children
+        brick.children.forEach(child => {
+            if (child.isMesh || child.isGroup) {
+                xml += '    ' + serializeBrickToXML(child).replace(/\n/g, '\n    ').trim() + '\n';
+            }
+        });
+
+        xml += '  </group>\n';
+    } else {
+        xml += `  <brick name="${brick.name}" uuid="${brick.uuid}">\n`;
+        xml += `    <position x="${brick.position.x}" y="${brick.position.y}" z="${brick.position.z}" />\n`;
+        xml += `    <rotation x="${brick.rotation.x}" y="${brick.rotation.y}" z="${brick.rotation.z}" />\n`;
+        xml += `    <scale x="${brick.scale.x}" y="${brick.scale.y}" z="${brick.scale.z}" />\n`;
+        xml += '  </brick>\n';
+    }
+
+    return xml;
+}
+
+// Deserialize XML to canvas
+function deserializeXMLToCanvas(xmlContent) {
+    // Clear current canvas
+    clearCanvas();
+
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+
+    const modelElement = xmlDoc.getElementsByTagName('lego-model')[0];
+    if (!modelElement) {
+        alert('Invalid XML file format');
+        return;
+    }
+
+    // Process all top-level bricks and groups
+    const elements = modelElement.children;
+    for (let i = 0; i < elements.length; i++) {
+        const element = elements[i];
+        if (element.tagName === 'brick' || element.tagName === 'group') {
+            const brick = deserializeBrickFromXML(element);
+            if (brick) {
+                scene.add(brick);
+                interactionManager.placedBricks.push(brick);
+            }
+        }
+    }
+
+    // Update UI
+    renderBrickList();
+}
+
+// Deserialize a single brick or group from XML
+function deserializeBrickFromXML(element) {
+    const name = element.getAttribute('name');
+    const uuid = element.getAttribute('uuid');
+
+    // Get position, rotation, scale
+    const positionElement = element.getElementsByTagName('position')[0];
+    const rotationElement = element.getElementsByTagName('rotation')[0];
+    const scaleElement = element.getElementsByTagName('scale')[0];
+
+    if (!positionElement || !rotationElement || !scaleElement) {
+        console.warn('Missing position, rotation, or scale data for brick:', name);
+        return null;
+    }
+
+    const position = {
+        x: parseFloat(positionElement.getAttribute('x')),
+        y: parseFloat(positionElement.getAttribute('y')),
+        z: parseFloat(positionElement.getAttribute('z'))
+    };
+
+    const rotation = {
+        x: parseFloat(rotationElement.getAttribute('x')),
+        y: parseFloat(rotationElement.getAttribute('y')),
+        z: parseFloat(rotationElement.getAttribute('z'))
+    };
+
+    const scale = {
+        x: parseFloat(scaleElement.getAttribute('x')),
+        y: parseFloat(scaleElement.getAttribute('y')),
+        z: parseFloat(scaleElement.getAttribute('z'))
+    };
+
+    let brick;
+
+    if (element.tagName === 'group') {
+        // Create group
+        brick = new THREE.Group();
+        brick.name = name;
+        brick.uuid = uuid;
+
+        // Process children
+        const children = element.children;
+        for (let i = 0; i < children.length; i++) {
+            const childElement = children[i];
+            if (childElement.tagName === 'brick' || childElement.tagName === 'group') {
+                const childBrick = deserializeBrickFromXML(childElement);
+                if (childBrick) {
+                    brick.add(childBrick);
+                }
+            }
+        }
+    } else {
+        // Create brick
+        brick = brickManager.getBrick(name);
+        if (!brick) {
+            console.warn('Unknown brick type:', name);
+            return null;
+        }
+        brick.uuid = uuid;
+    }
+
+    // Apply transforms
+    brick.position.set(position.x, position.y, position.z);
+    brick.rotation.set(rotation.x, rotation.y, rotation.z);
+    brick.scale.set(scale.x, scale.y, scale.z);
+
+    return brick;
+}
+
+// Download XML file
+function downloadXML(content, filename) {
+    const blob = new Blob([content], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    URL.revokeObjectURL(url);
+}
+
 // Animation Loop
 function animate() {
     requestAnimationFrame(animate);

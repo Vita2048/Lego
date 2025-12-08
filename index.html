@@ -11,22 +11,34 @@
 
 <body>
   <div id="app">
-    <div id="sidebar">
-      <h2>Bricks</h2>
-      <div id="brick-menu">
-        <!-- Brick items will be injected here -->
+    <div id="menu-bar">
+      <div class="menu-item">
+        <span>File</span>
+        <div class="dropdown">
+          <div class="dropdown-item" id="new-file">New</div>
+          <div class="dropdown-item" id="save-file">Save...</div>
+          <div class="dropdown-item" id="load-file">Load...</div>
+        </div>
       </div>
     </div>
-    <div id="canvas-container"></div>
-    <div id="right-sidebar">
-      <h3>Placed Bricks</h3>
-      <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-        <button id="group-btn" disabled>Group</button>
-        <button id="ungroup-btn" disabled>Ungroup</button>
+    <div id="main-content">
+      <div id="sidebar">
+        <h2>Bricks</h2>
+        <div id="brick-menu">
+          <!-- Brick items will be injected here -->
+        </div>
       </div>
-      <ul id="placed-bricks-list">
-        <!-- Placed bricks will be listed here -->
-      </ul>
+      <div id="canvas-container"></div>
+      <div id="right-sidebar">
+        <h3>Placed Bricks</h3>
+        <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+          <button id="group-btn" disabled>Group</button>
+          <button id="ungroup-btn" disabled>Ungroup</button>
+        </div>
+        <ul id="placed-bricks-list">
+          <!-- Placed bricks will be listed here -->
+        </ul>
+      </div>
     </div>
   </div>
   <script type="module" src="/main.js"></script>
