@@ -737,11 +737,11 @@ export class InteractionManager {
     // Find valid placement position considering overlaps and stacking
 // REPLACEMENT: Calculates the stacking height strictly. 
     // Does not move X/Z. Solves "jumping back" by snapping Y instead.
-    findValidPlacementPosition(brick) {
+findValidPlacementPosition(brick) {
         // 1. Get the 2D footprint (XZ) of the moving brick
         const brickBox = new THREE.Box3().setFromObject(brick);
         
-        // Add a small epsilon to avoid snapping to neighbors you are just barely grazing
+        // Epsilon to avoid snapping to neighbors you are just barely grazing
         const epsilon = 0.05; 
         const brickMinX = brickBox.min.x + epsilon;
         const brickMaxX = brickBox.max.x - epsilon;
@@ -749,12 +749,12 @@ export class InteractionManager {
         const brickMaxZ = brickBox.max.z - epsilon;
 
         // 2. Determine the vertical offset (pivot to bottom)
-        // This ensures we place the bottom of the brick, not its center
         const bottomOffset = brick.position.y - brickBox.min.y;
 
-        let highestSurfaceY = 0; // Default to ground level
+        // Start at ground level (0)
+        let highestSurfaceY = 0;
 
-        // 3. Check every other brick to see if we are stacking on it
+        // 3. Check what is strictly below us
         for (const placedBrick of this.placedBricks) {
             if (placedBrick === brick) continue;
 
@@ -765,9 +765,8 @@ export class InteractionManager {
             const overlapZ = (brickMaxZ > placedBox.min.z && brickMinZ < placedBox.max.z);
 
             if (overlapX && overlapZ) {
-                // We are strictly above this brick.
-                // The valid resting surface is the top of the placed brick's BODY.
-                // Formula: Top of Box - Stud Height
+                // We are hovering over this brick.
+                // The stacking floor is the top of the body (box max - stud height)
                 const restingSurface = placedBox.max.y - this.studHeight;
 
                 if (restingSurface > highestSurfaceY) {
@@ -776,12 +775,17 @@ export class InteractionManager {
             }
         }
 
-        // 4. Create result strictly using the calculated height
+        // 4. Determine the final Y position
         const result = brick.position.clone();
         
-        // Keep the user's X/Z (don't jump sideways)
-        // Force the Y to the calculated stack height
-        result.y = highestSurfaceY + bottomOffset;
+        // THE FIX:
+        // We take the higher of the two:
+        // A) Where the user dragged it (brick.position.y)
+        // B) The strict floor enforced by the stack (highestSurfaceY + offset)
+        // This allows lifting, but prevents sinking into the mesh below.
+        const minimumAllowedY = highestSurfaceY + bottomOffset;
+        
+        result.y = Math.max(brick.position.y, minimumAllowedY);
 
         return result;
     }
