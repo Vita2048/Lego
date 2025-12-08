@@ -508,6 +508,38 @@ export class InteractionManager {
         }
     }
 
+    duplicateSelected() {
+        if (this.selectedObjects.size === 0) return;
+
+        const newObjects = [];
+        let offsetIndex = 0;
+
+        this.selectedObjects.forEach(obj => {
+            const cloned = obj.clone();
+
+            // Offset position to avoid overlap
+            cloned.position.x += (offsetIndex + 1) * this.studSpacing * 2;
+
+            // Add to scene
+            this.scene.add(cloned);
+
+            // Add to placed bricks
+            this.placedBricks.push(cloned);
+
+            // Notify UI
+            if (this.onBrickAdded) {
+                this.onBrickAdded(cloned);
+            }
+
+            newObjects.push(cloned);
+            offsetIndex++;
+        });
+
+        // Deselect old objects and select new ones
+        this.deselectAll();
+        newObjects.forEach(obj => this.selectObject(obj, true));
+    }
+
     // GROUPING LOGIC
 
     groupSelected() {

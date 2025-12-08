@@ -32,6 +32,8 @@ body {
 #main-content {
   display: flex;
   flex-grow: 1;
+  height: calc(100vh - 30px);
+  overflow: hidden;
 }
 
 #menu-bar {
@@ -201,6 +203,9 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .placed-brick-item {

@@ -127,8 +127,18 @@ deleteBtn.onclick = () => {
     interactionManager.deleteSelected();
 };
 
+const duplicateBtn = document.createElement('button');
+duplicateBtn.textContent = 'Duplicate';
+duplicateBtn.style.padding = '5px 10px';
+duplicateBtn.style.cursor = 'pointer';
+duplicateBtn.disabled = true;
+duplicateBtn.onclick = () => {
+    interactionManager.duplicateSelected();
+};
+
 controlsContainer.appendChild(selectModeBtn);
 controlsContainer.appendChild(deleteBtn);
+controlsContainer.appendChild(duplicateBtn);
 
 // Insert controls before the menu
 const sidebar = document.getElementById('sidebar');
@@ -408,6 +418,7 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     // Update button states
     if (groupBtn) groupBtn.disabled = selectedCount < 2;
     if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
+    if (duplicateBtn) duplicateBtn.disabled = selectedCount === 0;
 };
 
 // Button Handlers
