@@ -288,9 +288,10 @@ let lastSelectedUuid = null;
 function formatBrickName(name) {
     if (name === 'Group') return 'Group';
 
-    const match = name.match(/Brick_(\d+x\d+)_(.+)/);
-    if (match) return `${match[1]} ${match[2]}`;
-
+    const parts = name.split('_');
+    if (parts.length >= 2) {
+        return `${parts[0]} ${parts[1]}`;
+    }
 
     return name;
 }
@@ -301,23 +302,15 @@ function createBrickListItem(brick) {
     li.className = 'placed-brick-item';
     li.dataset.uuid = brick.uuid;
 
-    // Create label with name and coordinates hint
+    // Create label with name
     const label = document.createElement('span');
     label.textContent = formatBrickName(brick.name);
-
-    // Minimal hint for groups or bricks
-    const coordHint = document.createElement('span');
-    coordHint.className = 'coord-hint';
-    const x = Math.round(brick.position.x * 10) / 10;
-    const z = Math.round(brick.position.z * 10) / 10;
-    coordHint.textContent = `(${x}, ${z})`;
 
     const contentDiv = document.createElement('div');
     contentDiv.style.display = 'flex';
     contentDiv.style.justifyContent = 'space-between';
     contentDiv.style.width = '100%';
     contentDiv.appendChild(label);
-    contentDiv.appendChild(coordHint);
 
     li.appendChild(contentDiv);
 
