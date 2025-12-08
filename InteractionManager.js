@@ -735,76 +735,56 @@ export class InteractionManager {
     }
 
     // Find valid placement position considering overlaps and stacking
+// REPLACEMENT: Calculates the stacking height strictly. 
+    // Does not move X/Z. Solves "jumping back" by snapping Y instead.
     findValidPlacementPosition(brick) {
-        // Create bounding box for the brick at its current position
-        const brickBox = new THREE.Box3();
-        brick.updateMatrixWorld();
-        brickBox.setFromObject(brick);
-
-        // Check for overlaps with existing bricks
-        let hasOverlap = false;
-        let bestY = 0; // Default to ground
-        let stackingBrick = null;
+        // 1. Get the 2D footprint (XZ) of the moving brick
+        const brickBox = new THREE.Box3().setFromObject(brick);
         
-        // Calculate ground offset
-        const box = new THREE.Box3().setFromObject(brick);
-        const bottomOffset = brick.position.y - box.min.y;
+        // Add a small epsilon to avoid snapping to neighbors you are just barely grazing
+        const epsilon = 0.05; 
+        const brickMinX = brickBox.min.x + epsilon;
+        const brickMaxX = brickBox.max.x - epsilon;
+        const brickMinZ = brickBox.min.z + epsilon;
+        const brickMaxZ = brickBox.max.z - epsilon;
 
+        // 2. Determine the vertical offset (pivot to bottom)
+        // This ensures we place the bottom of the brick, not its center
+        const bottomOffset = brick.position.y - brickBox.min.y;
+
+        let highestSurfaceY = 0; // Default to ground level
+
+        // 3. Check every other brick to see if we are stacking on it
         for (const placedBrick of this.placedBricks) {
             if (placedBrick === brick) continue;
 
-            const placedBox = new THREE.Box3();
-            placedBrick.updateMatrixWorld();
-            placedBox.setFromObject(placedBrick);
+            const placedBox = new THREE.Box3().setFromObject(placedBrick);
 
-            if (this.checkBoxOverlap(brickBox, placedBox)) {
-                hasOverlap = true;
-                
-                // Try stacking on top of this brick
-                const stackY = this.findStackingPosition(brick, brick.position.x, brick.position.z);
-                if (stackY > bestY) {
-                    bestY = stackY;
-                    stackingBrick = placedBrick;
+            // Strict X/Z Overlap Check
+            const overlapX = (brickMaxX > placedBox.min.x && brickMinX < placedBox.max.x);
+            const overlapZ = (brickMaxZ > placedBox.min.z && brickMinZ < placedBox.max.z);
+
+            if (overlapX && overlapZ) {
+                // We are strictly above this brick.
+                // The valid resting surface is the top of the placed brick's BODY.
+                // Formula: Top of Box - Stud Height
+                const restingSurface = placedBox.max.y - this.studHeight;
+
+                if (restingSurface > highestSurfaceY) {
+                    highestSurfaceY = restingSurface;
                 }
             }
         }
 
-        // Case 1: No overlap, clean placement
-        if (!hasOverlap) {
-            const result = brick.position.clone();
-            // Ensure not below ground
-            if (result.y < bottomOffset) {
-                result.y = bottomOffset;
-            }
-            return result;
-        }
+        // 4. Create result strictly using the calculated height
+        const result = brick.position.clone();
+        
+        // Keep the user's X/Z (don't jump sideways)
+        // Force the Y to the calculated stack height
+        result.y = highestSurfaceY + bottomOffset;
 
-        // Case 2: Overlap detected, but valid stacking is available
-        if (stackingBrick) {
-            // We found a brick we can stack on.
-            // Snap studs to it
-            const snappedPosition = this.snapStudsToBrick(brick, stackingBrick, brick.position.x, brick.position.z);
-            const result = snappedPosition.clone();
-            result.y = bestY + bottomOffset;
-            
-            return result;
-        }
-
-        // Case 3: Overlap detected, and NO valid stacking possible (e.g. intersecting sideways)
-        // Find nearest free spot on the ground (or current Y)
-        const originalY = brick.position.y;
-        const result = this.findNonOverlappingPosition(brick, originalY);
-
-        if (result) {
-            return result;
-        }
-
-        // Fallback: Force stack if we can't slide anywhere else
-        const resultFallback = brick.position.clone();
-        resultFallback.y = bestY + bottomOffset;
-        return resultFallback;
+        return result;
     }
-
     // Find a non-overlapping position at the same Y level
     findNonOverlappingPosition(brick, targetY) {
         const originalPos = brick.position.clone();
