@@ -374,6 +374,7 @@ export class InteractionManager {
                     } else if (this.activeGizmoAxis === 'center') {
                         newPosition.x += delta.x;
                         newPosition.z += delta.z;
+                        newPosition.y = originalPos.y;
                     }
 
                     // Snap X and Z to stud grid
@@ -415,10 +416,18 @@ export class InteractionManager {
                 obj.position.x = snapped.x;
                 obj.position.z = snapped.z;
                 
-                // Re-validate strictly one last time to ensure no slight drifts
-                const validPos = this.findValidPlacementPosition(obj);
-                obj.position.copy(validPos);
-                
+                // Re-validate strictly one last time to ensure no slight drifts.
+                // NOTE: We only apply full Y-validation if the Y-axis was dragged
+                // or if it was a placement, otherwise the XZ drag over/under
+                // objects would cause "jumping".
+                if (this.activeGizmoAxis === 'y' || this.activeGizmoAxis === null) {
+                    const validPos = this.findValidPlacementPosition(obj);
+                    obj.position.copy(validPos);
+                } else {
+                    // For X/Z/Center drag, just ensure we don't sink below the ground (Y>=0)
+                    if (obj.position.y < 0) obj.position.y = 0;
+                }
+
                 console.log("Brick dropped at:", obj.position);
             });
 
