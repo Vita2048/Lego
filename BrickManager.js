@@ -5,13 +5,17 @@ export class BrickManager {
   constructor(scene) {
     this.scene = scene;
     this.loader = new GLTFLoader();
-    this.bricks = new Map(); // Map<name, Mesh>
-    this.onBricksLoaded = null; // Callback
+
+    // Public templates map — used by main.js to detect Brick vs Plate by height
+    this.brickTemplates = new Map();   // <-- THIS IS THE ONLY NEW LINE YOU NEED
+
+    this.bricks = new Map();           // kept for backward compatibility / getBrick()
+    this.onBricksLoaded = null;        // Callback
 
     // Will be calculated from brick geometry
-    this.studSpacing = 0.8; // Default, will be updated
-    this.studHeight = 0.17; // Height of studs for interlocking
-    this.brickHeight = 0.96; // Standard brick height (will be calculated)
+    this.studSpacing = 0.8;   // Default, will be updated
+    this.studHeight = 0.17;   // Height of studs
+    this.brickHeight = 0.96;  // Standard brick height (will be calculated)
   }
 
   loadBricks(url) {
@@ -31,73 +35,79 @@ export class BrickManager {
   }
 
   processGLTF(gltf) {
-    // Traverse the scene and find all meshes
+    // Reset maps
+    this.bricks.clear();
+    this.brickTemplates.clear();
+
     gltf.scene.traverse((child) => {
       if (child.isMesh) {
-        // Clone the mesh to ensure we have a clean template
+        // 1. Clean template for placement (deep clone of geometry + material)
         const brick = child.clone();
-
-        // Reset position/rotation/scale just in case
         brick.position.set(0, 0, 0);
         brick.rotation.set(0, 0, 0);
         brick.scale.set(1, 1, 1);
 
-        // Center the geometry but align bottom to 0
+        // Center horizontally, bottom at Y=0
         brick.geometry.computeBoundingBox();
+        const box = brick.geometry.boundingBox;
         const center = new THREE.Vector3();
-        brick.geometry.boundingBox.getCenter(center);
-        const min = brick.geometry.boundingBox.min;
+        box.getCenter(center);
+        brick.geometry.translate(-center.x, -box.min.y, -center.z);
 
-        // Translate so that (0,0,0) is at the bottom center of the mesh
-        brick.geometry.translate(-center.x, -min.y, -center.z);
+        // Store clean clone for placement
+        brick.geometry = brick.geometry.clone();
+        brick.material = child.material.clone();
 
-        // Store in map
         this.bricks.set(child.name, brick);
 
-        // Calculate stud spacing from 2x2 brick (width = 2 studs)
+        // 2. Raw template for height detection (no geometry clone needed, just the object)
+        const templateForHeight = child.clone();
+        templateForHeight.geometry.computeBoundingBox();
+        const center2 = new THREE.Vector3();
+        templateForHeight.geometry.boundingBox.getCenter(center2);
+        templateForHeight.geometry.translate(-center2.x, -templateForHeight.geometry.boundingBox.min.y, -center2.z);
+
+        this.brickTemplates.set(child.name, templateForHeight);
+
+        // Detect stud spacing & brick height from any 2x2 brick/plate
         if (child.name.includes('2x2')) {
-          brick.geometry.computeBoundingBox();
+          templateForHeight.geometry.computeBoundingBox();
           const size = new THREE.Vector3();
-          brick.geometry.boundingBox.getSize(size);
-          // 2x2 brick spans 2 studs, so divide by 2
+          templateForHeight.geometry.boundingBox.getSize(size);
+
           this.studSpacing = Math.min(size.x, size.z) / 2;
-          this.brickHeight = size.y;
+          this.brickHeight = size.y;   // full height including studs
 
-          // Calculate stud height dynamically based on standard LEGO ratios
-          // Standard Brick: 9.6mm body, 1.7mm stud. Ratio body/width(8mm) = 1.2
-          const expectedBodyHeight = this.studSpacing * 1.2;
-          const calculatedStudHeight = size.y - expectedBodyHeight;
+          // Estimate stud height (body is ~1.2× stud spacing)
+          const expectedBody = this.studSpacing * 1.2;
+          const calcStudHeight = size.y - expectedBody;
 
-          // Validate and apply if reasonable (between 0.1 and 0.4 units)
-          if (calculatedStudHeight > 0.05 && calculatedStudHeight < 0.5) {
-            this.studHeight = calculatedStudHeight;
-            console.log('Dynamic studHeight detected:', this.studHeight);
-          } else {
-            console.warn('Calculated studHeight unreasonable:', calculatedStudHeight, 'Using default:', this.studHeight);
+          if (calcStudHeight > 0.05 && calcStudHeight < 0.5) {
+            this.studHeight = calcStudHeight;
+            console.log('Dynamic studHeight:', this.studHeight);
           }
 
-          console.log('Calculated stud spacing:', this.studSpacing, 'brick height:', this.brickHeight);
+          console.log('Stud spacing:', this.studSpacing, 'Full height:', this.brickHeight);
         }
       }
     });
 
-    console.log('Bricks processed:', this.bricks);
+    console.log('Bricks processed:', this.bricks.size, 'templates ready');
 
+    // Notify main.js that everything is ready
     if (this.onBricksLoaded) {
       this.onBricksLoaded(Array.from(this.bricks.keys()));
     }
   }
 
-  // Create a baseplate of white flat tiles
   createBaseplate(studsX, studsZ) {
     const baseGroup = new THREE.Group();
     baseGroup.name = 'Baseplate';
 
-    // Create a flat white surface with stud grid
     const width = studsX * this.studSpacing;
     const depth = studsZ * this.studSpacing;
 
-    // Main plate surface
+    // Ground plate
     const plateGeometry = new THREE.BoxGeometry(width, 0.1, depth);
     const plateMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -105,12 +115,12 @@ export class BrickManager {
       metalness: 0.1
     });
     const plate = new THREE.Mesh(plateGeometry, plateMaterial);
-    plate.position.set(0, -0.05, 0); // Slightly below ground so top is at y=0
+    plate.position.y = -0.05;
     plate.name = 'Ground';
     plate.receiveShadow = true;
     baseGroup.add(plate);
 
-    // Add studs on top
+    // Studs
     const studRadius = this.studSpacing * 0.3;
     const studGeometry = new THREE.CylinderGeometry(studRadius, studRadius, this.studHeight, 16);
     const studMaterial = new THREE.MeshStandardMaterial({
@@ -119,15 +129,13 @@ export class BrickManager {
       metalness: 0.1
     });
 
-    // Create instanced mesh for performance
     const studCount = studsX * studsZ;
     const studMesh = new THREE.InstancedMesh(studGeometry, studMaterial, studCount);
-    studMesh.name = 'Ground'; // So raycasting treats studs as ground
+    studMesh.name = 'Ground';
+    studMesh.receiveShadow = true;
 
     const matrix = new THREE.Matrix4();
     let idx = 0;
-
-    // Calculate starting position (centered)
     const startX = -width / 2 + this.studSpacing / 2;
     const startZ = -depth / 2 + this.studSpacing / 2;
 
@@ -139,9 +147,7 @@ export class BrickManager {
         studMesh.setMatrixAt(idx++, matrix);
       }
     }
-
     studMesh.instanceMatrix.needsUpdate = true;
-    studMesh.receiveShadow = true;
     baseGroup.add(studMesh);
 
     this.scene.add(baseGroup);
@@ -157,13 +163,11 @@ export class BrickManager {
 
   getBrick(name) {
     const template = this.bricks.get(name);
-    if (template) {
-      const clone = template.clone();
-      // Deep clone geometry and material to prevent shared state
-      clone.geometry = template.geometry.clone();
-      clone.material = template.material.clone();
-      return clone;
-    }
-    return null;
+    if (!template) return null;
+
+    const clone = template.clone();
+    clone.geometry = template.geometry.clone();
+    clone.material = template.material.clone();
+    return clone;
   }
 }

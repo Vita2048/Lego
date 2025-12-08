@@ -43,6 +43,60 @@ const interactionManager = new InteractionManager(scene, camera, renderer.domEle
 // UI Integration
 const brickMenu = document.getElementById('brick-menu');
 
+// Extended color mapping with more LEGO colors
+const colorMap = {
+    'Red': '#ff0000',
+    'Blue': '#0000ff',
+    'Green': '#00ff00',
+    'Yellow': '#ffff00',
+    'White': '#ffffff',
+    'Black': '#000000',
+    'Gray': '#808080',
+    'Grey': '#808080',
+    'Orange': '#ffa500',
+    'Purple': '#800080',
+    'Pink': '#ffc0cb',
+    'Brown': '#8B4513',
+    'Tan': '#D2B48C',
+    'LightGray': '#D3D3D3',
+    'DarkGray': '#A9A9A9',
+    'Cyan': '#00FFFF',
+    'Magenta': '#FF00FF',
+    'Lime': '#00FF00',
+    'Navy': '#000080',
+    'Teal': '#008080',
+    'Olive': '#808000',
+    'Maroon': '#800000'
+};
+
+// Create a visual representation of the brick based on type and size
+const createBrickThumbnail = (type, width, depth) => {
+    // Create image element for thumbnail
+    const img = document.createElement('img');
+
+    // Ensure we use the correct thumbnail path - Bricks and Plates have different icons
+    // Bricks are 2x taller than plates, so we need to use the appropriate icon
+    const thumbnailPath = `lego_thumbnails/${type} ${width}x${depth}.png`;
+
+    // Debug: log the thumbnail path being used
+    console.log(`Creating thumbnail for ${type} ${width}x${depth}: ${thumbnailPath}`);
+
+    img.src = thumbnailPath;
+    img.width = 60;
+    img.height = 60;
+    img.style.objectFit = 'contain';
+
+    // Add error handling for missing thumbnails
+    img.onerror = () => {
+        console.warn(`Thumbnail not found: ${thumbnailPath}`);
+        // Fallback to a generic brick icon if available
+        img.src = 'lego_thumbnails/Brick 2x2.png';
+    };
+
+    return img;
+};
+
+
 // Add Mode Controls
 const controlsContainer = document.createElement('div');
 controlsContainer.style.padding = '10px';
@@ -82,11 +136,9 @@ sidebar.insertBefore(controlsContainer, brickMenu);
 
 
 brickManager.onBricksLoaded = (brickNames) => {
-    // Create the 60x60 stud white baseplate
+    // Create baseplate
     const baseplateInfo = brickManager.createBaseplate(60, 60);
-    console.log('Baseplate created:', baseplateInfo);
 
-    // Configure InteractionManager with stud grid settings
     interactionManager.setStudGrid(
         brickManager.studSpacing,
         brickManager.studHeight,
@@ -95,87 +147,107 @@ brickManager.onBricksLoaded = (brickNames) => {
         brickManager.brickHeight
     );
 
-    brickMenu.innerHTML = ''; // Clear loading text if any
+    brickMenu.innerHTML = ''; 
+
+    // key: `${type}_${width}x${depth}`, value: {type, width, depth, bricks: []}
+    const sizeMap = new Map(); 
 
     brickNames.forEach(name => {
+        const lowerName = name.toLowerCase();
+
+        // Parse size
+        let width = 2, depth = 2;
+        const sizeMatch = name.match(/(\d+)x(\d+)/);
+        if (sizeMatch) {
+            width = parseInt(sizeMatch[1]);
+            depth = parseInt(sizeMatch[2]);
+        }
+
+        // Determine type based on actual model height instead of name (to fix misclassification)
+        const tempMesh = brickManager.brickTemplates.get(name).clone();
+        const box = new THREE.Box3().setFromObject(tempMesh);
+        const height = box.max.y - box.min.y;
+        // Assuming brickManager.brickHeight is the full standard brick height (~9.6 units),
+        // plates are ~1/3 that height (~3.2 units). Use a threshold like half the brick height.
+        let type = (height < brickManager.brickHeight / 2) ? 'Plate' : 'Brick';
+
+        const key = `${type}_${width}x${depth}`;
+        
+        if (!sizeMap.has(key)) {
+            sizeMap.set(key, {type, width, depth, bricks: []});
+        }
+        sizeMap.get(key).bricks.push(name);
+    });
+
+    // Helper to extract clean colors
+    const extractColor = (name, type, width, depth) => {
+        const lowerName = name.toLowerCase();
+        const typeLower = type.toLowerCase();
+        
+        // Remove known prefixes/suffixes to isolate color
+        // Example: "Brick 2x2 Red" -> "Red"
+        let tempName = name.replace(/brick/gi, '').replace(/plate/gi, '');
+        tempName = tempName.replace(`${width}x${depth}`, '').replace(`${width}X${depth}`, '');
+        tempName = tempName.replace(/_/g, ' ').trim();
+        
+        // If result is empty, fallback to original name
+        return tempName || name;
+    };
+
+    // Convert Map to Array for Sorting
+    const sortedItems = Array.from(sizeMap.values()).sort((a, b) => {
+        // 1. Sort by Type (Brick first, then Plate)
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        
+        // 2. Sort by Width
+        if (a.width !== b.width) return a.width - b.width;
+        
+        // 3. Sort by Depth
+        return a.depth - b.depth;
+    });
+
+    // Generate Menu Items
+    sortedItems.forEach(({type, width, depth, bricks}) => {
         const item = document.createElement('div');
         item.className = 'brick-item';
 
         const preview = document.createElement('div');
         preview.className = 'brick-preview';
 
-        // Create a visual representation of the brick based on its name
-        const createBrickThumbnail = (brickName) => {
-            // Parse brick name to determine type, size - handle multiple formats
-            let width = 2, depth = 2, type = 'Brick';
-            let match;
-
-            // Try standard format: Brick_2x4_Red
-            match = brickName.match(/Brick_(\d+)x(\d+)_(.+)/);
-            if (match) {
-                type = 'Brick';
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-            // Try Plate format: Plate_2x4_Red
-            else if ((match = brickName.match(/Plate_(\d+)x(\d+)_(.+)/))) {
-                type = 'Plate';
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-            // Try alternative format: 2x4_Red_Brick
-            else if ((match = brickName.match(/(\d+)x(\d+)_(.+)_Brick/))) {
-                type = 'Brick';
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-            // Try alternative format: 2x4_Red_Plate
-            else if ((match = brickName.match(/(\d+)x(\d+)_(.+)_Plate/))) {
-                type = 'Plate';
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-            // Try format without type: 2x4_Red
-            else if ((match = brickName.match(/(\d+)x(\d+)_(.+)/))) {
-                type = 'Brick'; // default to Brick
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-            // Try format with underscore variations
-            else if ((match = brickName.match(/(\d+)x(\d+)/))) {
-                type = 'Brick'; // default to Brick
-                width = parseInt(match[1]);
-                depth = parseInt(match[2]);
-            }
-
-            // Create image element for thumbnail
-            const img = document.createElement('img');
-            img.src = `lego_thumbnails/${type} ${width}x${depth}.png`;
-            img.width = 60;
-            img.height = 60;
-            img.style.objectFit = 'contain';
-
-            return img;
-        };
-
-        // Create and add the thumbnail
-        const thumbnailCanvas = createBrickThumbnail(name);
-        preview.appendChild(thumbnailCanvas);
+        // Uses the specific icon: "Brick 2x2.png" or "Plate 2x2.png"
+        const thumbnail = createBrickThumbnail(type, width, depth);
+        preview.appendChild(thumbnail);
 
         const label = document.createElement('div');
         label.className = 'brick-name';
-        label.textContent = name;
+        label.textContent = `${type} ${width}x${depth}`;
+
+        const colorSelect = document.createElement('select');
+        colorSelect.className = 'color-select';
+        colorSelect.style.width = '100%';
+        colorSelect.style.marginTop = '5px';
+
+        bricks.forEach(brick => {
+            const color = extractColor(brick, type, width, depth);
+            const option = document.createElement('option');
+            option.value = brick;
+            option.textContent = color;
+            colorSelect.appendChild(option);
+        });
+
+        colorSelect.value = bricks[0];
 
         item.appendChild(preview);
         item.appendChild(label);
+        item.appendChild(colorSelect);
 
         item.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent click from reaching canvas
-            // Highlight selection
+            e.stopPropagation();
             document.querySelectorAll('.brick-item').forEach(el => el.classList.remove('selected'));
             item.classList.add('selected');
 
-            interactionManager.selectBrick(name);
+            const selectedBrick = colorSelect.value;
+            interactionManager.selectBrick(selectedBrick);
         });
 
         brickMenu.appendChild(item);
@@ -205,13 +277,14 @@ let lastSelectedUuid = null;
 
 function formatBrickName(name) {
     if (name === 'Group') return 'Group';
-    // Match "Brick_2x4_Red" -> "2x4 Red"
+
     const match = name.match(/Brick_(\d+x\d+)_(.+)/);
-    if (match) {
-        return `${match[1]} ${match[2]}`;
-    }
+    if (match) return `${match[1]} ${match[2]}`;
+
+
     return name;
 }
+
 
 function createBrickListItem(brick) {
     const li = document.createElement('li');
