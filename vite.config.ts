@@ -2,8 +2,8 @@
 import { defineConfig } from 'vite'
 import { resolve } from 'path'
 
-export default defineConfig({
-  base: './',  // This is the key fix!
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/Lego/' : './',  // Use './' for local dev, '/Lego/' for GitHub Pages
   build: {
     rollupOptions: {
       input: {
@@ -11,4 +11,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
