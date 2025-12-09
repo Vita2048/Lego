@@ -36,7 +36,7 @@ dirLight.shadow.camera.top = 50;
 dirLight.shadow.camera.bottom = -50;
 scene.add(dirLight);
 
-const base = import.meta.env.BASE_URL;
+
 
 // Managers
 const brickManager = new BrickManager(scene);
@@ -78,7 +78,7 @@ const createBrickThumbnail = (type, width, depth) => {
 
     // Ensure we use the correct thumbnail path - Bricks and Plates have different icons
     // Bricks are 2x taller than plates, so we need to use the appropriate icon
-    const thumbnailPath = `${base}lego_thumbnails/${type} ${width}x${depth}.png`;
+    const thumbnailPath = `lego_thumbnails/${type} ${width}x${depth}.png`;
 
     // Debug: log the thumbnail path being used
     console.log(`Creating thumbnail for ${type} ${width}x${depth}: ${thumbnailPath}`);
@@ -92,7 +92,7 @@ const createBrickThumbnail = (type, width, depth) => {
     img.onerror = () => {
         console.warn(`Thumbnail not found: ${thumbnailPath}`);
         // Fallback to a generic brick icon if available
-        img.src = `${base}Brick 2x2.png`;
+        img.src = `lego_thumbnails/Brick 2x2.png`;
     };
 
     return img;
@@ -267,7 +267,7 @@ brickManager.onBricksLoaded = (brickNames) => {
 };
 
 // Load assets
-brickManager.loadBricks(`${base}scene.gltf`);
+brickManager.loadBricks(`scene.gltf`);
 
 // Handle resize
 window.addEventListener('resize', () => {
