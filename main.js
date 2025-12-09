@@ -265,7 +265,7 @@ brickManager.onBricksLoaded = (brickNames) => {
 };
 
 // Load assets
-brickManager.loadBricks('/scene.gltf');
+brickManager.loadBricks('./public/scene.gltf');
 
 // Handle resize
 window.addEventListener('resize', () => {
