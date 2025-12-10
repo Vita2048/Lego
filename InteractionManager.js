@@ -40,11 +40,13 @@ export class InteractionManager {
         this.gizmo = null;
         this.gizmoArrows = { x: null, y: null, z: null };
         this.gizmoCenterHandle = null;
-        this.activeGizmoAxis = null; // 'x', 'y', 'z', or 'center'
+        this.gizmoRotationRing = null;
+        this.activeGizmoAxis = null; // 'x', 'y', 'z', 'center', or 'rotate'
         this.gizmoDragStart = new THREE.Vector3();
         this.dragStartMouse = new THREE.Vector2(); // For vertical drag sensitivity
         this.verticalDragFactor = 1.0; // Sensitivity for vertical drag
         this.objectDragStarts = new Map(); // Map uuid -> original position
+        this.objectRotationStarts = new Map(); // Map uuid -> original rotation
 
         // Callbacks for UI
         this.onBrickAdded = null;
@@ -281,10 +283,12 @@ export class InteractionManager {
                 this.activeGizmoAxis = gizmoAxis;
                 this.isDragging = true;
 
-                // Store original positions of ALL selected objects
+                // Store original positions and rotations of ALL selected objects
                 this.objectDragStarts.clear();
+                this.objectRotationStarts.clear();
                 this.selectedObjects.forEach(obj => {
                     this.objectDragStarts.set(obj.uuid, obj.position.clone());
+                    this.objectRotationStarts.set(obj.uuid, obj.rotation.clone());
                 });
 
                 // Use the ground plane for all axes to allow proper delta calculation
@@ -341,55 +345,79 @@ export class InteractionManager {
             this.raycaster.ray.intersectPlane(this.dragPlane, currentPoint);
 
             if (currentPoint) {
-                let delta = new THREE.Vector3();
-                if (this.activeGizmoAxis === 'y') {
-                    // Vertical drag: compute delta based on mouse Y movement
-                    const mouseDeltaY = this.mouse.y - this.dragStartMouse.y;
-                    delta.y = mouseDeltaY * this.verticalDragFactor;
-                    delta.x = 0;
-                    delta.z = 0;
+                if (this.activeGizmoAxis === 'rotate') {
+                    // Handle rotation around Y axis
+                    const gizmoCenter = this.gizmo.position.clone();
+                    const startVector = this.gizmoDragStart.clone().sub(gizmoCenter).normalize();
+                    const currentVector = currentPoint.clone().sub(gizmoCenter).normalize();
+
+                    // Calculate angle difference
+                    const angle = Math.atan2(currentVector.z, currentVector.x) - Math.atan2(startVector.z, startVector.x);
+
+                    console.log('Rotation angle:', angle * 180 / Math.PI, 'degrees');
+
+                    // Apply rotation to ALL selected objects
+                    this.selectedObjects.forEach(obj => {
+                        const originalRotation = this.objectRotationStarts.get(obj.uuid);
+                        if (!originalRotation) return;
+
+                        const newRotation = originalRotation.clone();
+                        newRotation.y = originalRotation.y + angle;
+
+                        obj.rotation.copy(newRotation);
+                        console.log('Object rotation:', obj.rotation.y * 180 / Math.PI, 'degrees');
+                    });
                 } else {
-                    delta.subVectors(currentPoint, this.gizmoDragStart);
-                }
-
-                // Apply delta to ALL selected objects
-                this.selectedObjects.forEach(obj => {
-                    const originalPos = this.objectDragStarts.get(obj.uuid);
-                    if (!originalPos) return;
-
-                    const newPosition = originalPos.clone();
-
-                    if (this.activeGizmoAxis === 'x') {
-                        newPosition.x += delta.x;
-                    } else if (this.activeGizmoAxis === 'y') {
-                        newPosition.y += delta.y;
-                        // Snap Y to vertical grid (brick height - stud height)
-                        if (this.verticalGridSize > 0) {
-                            newPosition.y = Math.round(newPosition.y / this.verticalGridSize) * this.verticalGridSize;
-                        }
-                        // Clamp to ground (Y >= 0)
-                        if (newPosition.y < 0) newPosition.y = 0;
-                    } else if (this.activeGizmoAxis === 'z') {
-                        newPosition.z += delta.z;
-                    } else if (this.activeGizmoAxis === 'center') {
-                        newPosition.x += delta.x;
-                        newPosition.z += delta.z;
-                        newPosition.y = originalPos.y;
+                    let delta = new THREE.Vector3();
+                    if (this.activeGizmoAxis === 'y') {
+                        // Vertical drag: compute delta based on mouse Y movement
+                        const mouseDeltaY = this.mouse.y - this.dragStartMouse.y;
+                        delta.y = mouseDeltaY * this.verticalDragFactor;
+                        delta.x = 0;
+                        delta.z = 0;
+                    } else {
+                        delta.subVectors(currentPoint, this.gizmoDragStart);
                     }
 
-                    // Snap X and Z to stud grid
-                    const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
-                    newPosition.x = snapped.x;
-                    newPosition.z = snapped.z;
+                    // Apply delta to ALL selected objects
+                    this.selectedObjects.forEach(obj => {
+                        const originalPos = this.objectDragStarts.get(obj.uuid);
+                        if (!originalPos) return;
 
-                    // Apply the new approximate position first so we can check it
-                    obj.position.copy(newPosition);
+                        const newPosition = originalPos.clone();
 
-                    // Skip collision detection during drag to prevent jumping.
-                    // Validation will be applied on mouse up.
-                    // const validPos = this.findValidPlacementPosition(obj);
-                    // obj.position.copy(validPos);
-                });
+                        if (this.activeGizmoAxis === 'x') {
+                            newPosition.x += delta.x;
+                        } else if (this.activeGizmoAxis === 'y') {
+                            newPosition.y += delta.y;
+                            // Snap Y to vertical grid (brick height - stud height)
+                            if (this.verticalGridSize > 0) {
+                                newPosition.y = Math.round(newPosition.y / this.verticalGridSize) * this.verticalGridSize;
+                            }
+                            // Clamp to ground (Y >= 0)
+                            if (newPosition.y < 0) newPosition.y = 0;
+                        } else if (this.activeGizmoAxis === 'z') {
+                            newPosition.z += delta.z;
+                        } else if (this.activeGizmoAxis === 'center') {
+                            newPosition.x += delta.x;
+                            newPosition.z += delta.z;
+                            newPosition.y = originalPos.y;
+                        }
+
+                        // Snap X and Z to stud grid
+                        const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
+                        newPosition.x = snapped.x;
+                        newPosition.z = snapped.z;
+
+                        // Apply the new approximate position first so we can check it
+                        obj.position.copy(newPosition);
+
+                        // Skip collision detection during drag to prevent jumping.
+                        // Validation will be applied on mouse up.
+                        // const validPos = this.findValidPlacementPosition(obj);
+                        // obj.position.copy(validPos);
+                    });
+                }
 
                 this.updateGizmoPosition();
             }
@@ -411,24 +439,30 @@ export class InteractionManager {
             // The position is already valid.
 
             this.selectedObjects.forEach(obj => {
-                // One final sanity check to ensure grid alignment
-                const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
-                obj.position.x = snapped.x;
-                obj.position.z = snapped.z;
-                
-                // Re-validate strictly one last time to ensure no slight drifts.
-                // NOTE: We only apply full Y-validation if the Y-axis was dragged
-                // or if it was a placement, otherwise the XZ drag over/under
-                // objects would cause "jumping".
-                if (this.activeGizmoAxis === 'y' || this.activeGizmoAxis === null) {
-                    const validPos = this.findValidPlacementPosition(obj);
-                    obj.position.copy(validPos);
+                if (this.activeGizmoAxis === 'rotate') {
+                    // Snap rotation to 90-degree increments
+                    const snappedRotationY = Math.round(obj.rotation.y / (Math.PI / 2)) * (Math.PI / 2);
+                    obj.rotation.y = snappedRotationY;
                 } else {
-                    // For X/Z/Center drag, just ensure we don't sink below the ground (Y>=0)
-                    if (obj.position.y < 0) obj.position.y = 0;
+                    // One final sanity check to ensure grid alignment
+                    const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
+                    obj.position.x = snapped.x;
+                    obj.position.z = snapped.z;
+
+                    // Re-validate strictly one last time to ensure no slight drifts.
+                    // NOTE: We only apply full Y-validation if the Y-axis was dragged
+                    // or if it was a placement, otherwise the XZ drag over/under
+                    // objects would cause "jumping".
+                    if (this.activeGizmoAxis === 'y' || this.activeGizmoAxis === null) {
+                        const validPos = this.findValidPlacementPosition(obj);
+                        obj.position.copy(validPos);
+                    } else {
+                        // For X/Z/Center drag, just ensure we don't sink below the ground (Y>=0)
+                        if (obj.position.y < 0) obj.position.y = 0;
+                    }
                 }
 
-                console.log("Brick dropped at:", obj.position);
+                console.log("Brick dropped at:", obj.position, "rotation:", obj.rotation.y);
             });
 
             this.updateGizmoPosition();
@@ -1104,6 +1138,17 @@ findValidPlacementPosition(brick) {
         this.gizmoCenterHandle.userData.originalColor = 0xffffff;
         this.gizmo.add(this.gizmoCenterHandle);
 
+        // Rotation ring - Orange torus around Y axis, parallel to canvas (XZ plane)
+        const ringGeometry = new THREE.TorusGeometry(3.0, 0.1, 8, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+        this.gizmoRotationRing = new THREE.Mesh(ringGeometry, ringMaterial);
+        this.gizmoRotationRing.name = 'gizmo-rotate';
+        this.gizmoRotationRing.userData.axis = 'rotate';
+        this.gizmoRotationRing.userData.originalColor = 0xffa500;
+        // Rotate to make it parallel to canvas (XZ plane)
+        this.gizmoRotationRing.rotation.x = Math.PI / 2;
+        this.gizmo.add(this.gizmoRotationRing);
+
         this.scene.add(this.gizmo);
     }
 
@@ -1125,6 +1170,12 @@ findValidPlacementPosition(brick) {
                     // this.gizmoCenterHandle.material.emissive = new THREE.Color(glowColor);
                     // TEMPORARILY DISABLED SCALING
                     // this.gizmoCenterHandle.scale.set(1.3, 1.3, 1.3);
+                }
+            } else if (axis === 'rotate') {
+                if (this.gizmoRotationRing && this.gizmoRotationRing.material) {
+                    this.gizmoRotationRing.material.color.setHex(glowColor);
+                    // TEMPORARILY DISABLED SCALING
+                    // this.gizmoRotationRing.scale.set(1.2, 1.2, 1.2);
                 }
             } else if (this.gizmoArrows[axis]) {
                 const arrow = this.gizmoArrows[axis];
@@ -1150,6 +1201,12 @@ findValidPlacementPosition(brick) {
             if (this.gizmoCenterHandle) {
                 this.gizmoCenterHandle.material.color.setHex(0xffffff);
                 this.gizmoCenterHandle.scale.set(1, 1, 1);
+            }
+
+            // Reset rotation ring
+            if (this.gizmoRotationRing) {
+                this.gizmoRotationRing.material.color.setHex(0xffa500);
+                this.gizmoRotationRing.scale.set(1, 1, 1);
             }
 
             // Reset arrows
