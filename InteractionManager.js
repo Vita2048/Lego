@@ -1047,20 +1047,53 @@ findValidPlacementPosition(brick) {
             return group;
         };
 
+        // Helper function to create text sprite
+        const createTextSprite = (text, color) => {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 64;
+            canvas.height = 64;
+            context.font = 'Bold 48px Arial';
+            context.fillStyle = color;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 32, 32);
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(0.8, 0.8, 1);
+            return sprite;
+        };
+
         // X axis - Red
         const xArrow = createArrow(new THREE.Vector3(1, 0, 0), 0xff0000, 'gizmo-x', 'x');
         this.gizmoArrows.x = xArrow;
         this.gizmo.add(xArrow);
+
+        // X label
+        const xLabel = createTextSprite('X', '#ff0000');
+        xLabel.position.set(4.5, 0, 0);
+        this.gizmo.add(xLabel);
 
         // Y axis - Green
         const yArrow = createArrow(new THREE.Vector3(0, 1, 0), 0x00ff00, 'gizmo-y', 'y');
         this.gizmoArrows.y = yArrow;
         this.gizmo.add(yArrow);
 
+        // Y label
+        const yLabel = createTextSprite('Y', '#00ff00');
+        yLabel.position.set(0, 4.5, 0);
+        this.gizmo.add(yLabel);
+
         // Z axis - Blue
         const zArrow = createArrow(new THREE.Vector3(0, 0, 1), 0x0000ff, 'gizmo-z', 'z');
         this.gizmoArrows.z = zArrow;
         this.gizmo.add(zArrow);
+
+        // Z label
+        const zLabel = createTextSprite('Z', '#0000ff');
+        zLabel.position.set(0, 0, 4.5);
+        this.gizmo.add(zLabel);
 
         // Center handle - White sphere (larger)
         const centerGeometry = new THREE.SphereGeometry(0.4, 16, 16);
