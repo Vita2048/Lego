@@ -776,60 +776,97 @@ export class InteractionManager {
     }
 
     // Find valid placement position considering overlaps and stacking
-// REPLACEMENT: Calculates the stacking height strictly. 
-    // Does not move X/Z. Solves "jumping back" by snapping Y instead.
+// In InteractionManager.js
+
 findValidPlacementPosition(brick) {
-        // 1. Get the 2D footprint (XZ) of the moving brick
-        const brickBox = new THREE.Box3().setFromObject(brick);
-        
-        // Epsilon to avoid snapping to neighbors you are just barely grazing
-        const epsilon = 0.05; 
-        const brickMinX = brickBox.min.x + epsilon;
-        const brickMaxX = brickBox.max.x - epsilon;
-        const brickMinZ = brickBox.min.z + epsilon;
-        const brickMaxZ = brickBox.max.z - epsilon;
+    const brickBox = new THREE.Box3().setFromObject(brick);
+    
+    // Slight epsilon to avoid 'friction' with neighbors
+    const epsilon = 0.05; 
+    const brickMinX = brickBox.min.x + epsilon;
+    const brickMaxX = brickBox.max.x - epsilon;
+    const brickMinZ = brickBox.min.z + epsilon;
+    const brickMaxZ = brickBox.max.z - epsilon;
 
-        // 2. Determine the vertical offset (pivot to bottom)
-        const bottomOffset = brick.position.y - brickBox.min.y;
+    let finalY = 0; // The lowest valid stacking Y position (default is ground)
 
-        // Start at ground level (0)
-        let highestSurfaceY = 0;
+    // Helper: Recursively get all mesh children from a brick/group
+    const getMeshes = (obj) => {
+        let meshes = [];
+        if (obj.isMesh) {
+            meshes.push(obj);
+        } else if (obj.isGroup) {
+            obj.children.forEach(child => {
+                meshes = meshes.concat(getMeshes(child));
+            });
+        }
+        return meshes;
+    };
 
-        // 3. Check what is strictly below us
-        for (const placedBrick of this.placedBricks) {
-            if (placedBrick === brick) continue;
+    // --- NEW LOGIC: Calculate the minimum Y-offset for the current object (brick/group) ---
+    // If 'brick' is a Group, its position (origin) might not be at its lowest point.
+    const objectWorldBox = new THREE.Box3().setFromObject(brick);
+    const minObjectY = objectWorldBox.min.y; // Lowest Y value of the brick/group in world space
+    
+    // The amount the object needs to be lifted so its lowest point is at finalY (the target surface).
+    // This value is 0 if the object's lowest point is already at its current position.
+    const yOffset = brick.position.y - minObjectY;
 
-            const placedBox = new THREE.Box3().setFromObject(placedBrick);
+    // The required stacking height is now relative to the object's lowest point.
+    let requiredY = 0 + yOffset; // Start with ground level (0) + offset
+    // ------------------------------------------------------------------------------------
 
-            // Strict X/Z Overlap Check
-            const overlapX = (brickMaxX > placedBox.min.x && brickMinX < placedBox.max.x);
-            const overlapZ = (brickMaxZ > placedBox.min.z && brickMinZ < placedBox.max.z);
 
-            if (overlapX && overlapZ) {
-                // We are hovering over this brick.
-                // The stacking floor is the top of the body (box max - stud height)
-                const restingSurface = placedBox.max.y - this.studHeight;
+    // Flatten the placed bricks list into a list of actual physical meshes
+    const allMeshes = [];
+    this.placedBricks.forEach(pb => {
+        if (pb === brick) return;
+        allMeshes.push(...getMeshes(pb));
+    });
 
-                if (restingSurface > highestSurfaceY) {
-                    highestSurfaceY = restingSurface;
-                }
+    // Check against every physical mesh in the scene
+    for (const mesh of allMeshes) {
+        // Get the world bounding box of this specific mesh
+        const meshBox = new THREE.Box3().setFromObject(mesh);
+
+        // Strict X/Z Overlap Check
+        const overlapX = (brickMaxX > meshBox.min.x && brickMinX < meshBox.max.x);
+        const overlapZ = (brickMaxZ > meshBox.min.z && brickMinZ < meshBox.max.z);
+
+        if (overlapX && overlapZ) {
+            // We found a brick directly below us.
+            
+            // Get World Position Y of the mesh below
+            const worldPos = new THREE.Vector3();
+            mesh.getWorldPosition(worldPos);
+
+            // Determine if it is a Plate or Brick based on geometry height
+            const height = meshBox.max.y - meshBox.min.y;
+            
+            // Define Standard LEGO Unit Heights
+            let gridStep = 0.96; // Default to Brick
+            if (height < 0.6) {
+                gridStep = 0.32; // It is a Plate
+            }
+
+            // Calculate the valid stacking Y position
+            const stackY = worldPos.y + gridStep;
+
+            if (stackY > requiredY) {
+                requiredY = stackY;
             }
         }
-
-        // 4. Determine the final Y position
-        const result = brick.position.clone();
-        
-        // THE FIX:
-        // We take the higher of the two:
-        // A) Where the user dragged it (brick.position.y)
-        // B) The strict floor enforced by the stack (highestSurfaceY + offset)
-        // This allows lifting, but prevents sinking into the mesh below.
-        const minimumAllowedY = highestSurfaceY + bottomOffset;
-        
-        result.y = Math.max(brick.position.y, minimumAllowedY);
-
-        return result;
     }
+
+    const result = brick.position.clone();
+    
+    // We use Math.max() to ensure:
+    // 1. If brick.position.y < requiredY (user tried to clip/sink below ground), it snaps UP to requiredY.
+    // 2. If brick.position.y > requiredY (user lifted the brick), it stays at brick.position.y.
+    result.y = Math.max(brick.position.y, requiredY);
+
+    return result;
+}
     // Find a non-overlapping position at the same Y level
     findNonOverlappingPosition(brick, targetY) {
         const originalPos = brick.position.clone();
