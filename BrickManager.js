@@ -93,10 +93,18 @@ export class BrickManager {
     });
 
     console.log('Bricks processed:', this.bricks.size, 'templates ready');
+    console.log('GLTF data available:', gltf ? 'Yes' : 'No');
+    console.log('GLTF materials:', gltf?.materials ? gltf.materials.length : 'None');
+
+    // Store GLTF data for color extraction
+    this.gltfData = gltf;
 
     // Notify main.js that everything is ready
     if (this.onBricksLoaded) {
-      this.onBricksLoaded(Array.from(this.bricks.keys()));
+      console.log('Calling onBricksLoaded with:', Array.from(this.bricks.keys()).length, 'bricks and gltf:', gltf);
+      this.onBricksLoaded(Array.from(this.bricks.keys()), gltf);
+    } else {
+      console.warn('onBricksLoaded callback not set');
     }
   }
 
@@ -168,6 +176,35 @@ export class BrickManager {
     const clone = template.clone();
     clone.geometry = template.geometry.clone();
     clone.material = template.material.clone();
+    return clone;
+  }
+
+  // Method to get a brick with a specific color
+  getBrickWithColor(baseName, colorName) {
+    // First, find the base brick template
+    const baseTemplate = this.bricks.get(baseName);
+    if (!baseTemplate) return null;
+
+    // Find a brick with the matching color to get the material
+    let targetMaterial = null;
+    for (const [brickName, brickTemplate] of this.bricks) {
+        if (brickName.includes(colorName.replace(/ /g, '_'))) {
+            targetMaterial = brickTemplate.material;
+            break;
+        }
+    }
+
+    // Clone the base brick
+    const clone = baseTemplate.clone();
+    clone.geometry = baseTemplate.geometry.clone();
+
+    // Apply the target material if found, otherwise use the original
+    if (targetMaterial) {
+        clone.material = targetMaterial.clone();
+    } else {
+        clone.material = baseTemplate.material.clone();
+    }
+
     return clone;
   }
 }

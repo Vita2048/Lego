@@ -201,8 +201,11 @@ export class InteractionManager {
                 // Snap to stud grid
                 const snapped = this.snapToStudGrid(intersectionPoint.x, intersectionPoint.z, this.ghostBrick);
 
-                // Clone the ghost to create a real brick
-                const newBrick = this.brickManager.getBrick(this.selectedBrickName);
+                // Get the selected color (default to white if not set)
+                const selectedColor = window.selectedColor || 'White';
+
+                // Clone the ghost to create a real brick with selected color
+                const newBrick = this.brickManager.getBrickWithColor(this.selectedBrickName, selectedColor);
                 if (newBrick) {
                     // Position and rotate the new brick
                     newBrick.position.set(snapped.x, 0, snapped.z);
@@ -1279,13 +1282,16 @@ findValidPlacementPosition(brick) {
         this.removeGhost();
         this.removeDragGhost();
 
-        // Create new ghost for placement
-        const brick = this.brickManager.getBrick(name);
+        // Get the selected color (default to white if not set)
+        const selectedColor = window.selectedColor || 'White';
+
+        // Create new ghost for placement with selected color
+        const brick = this.brickManager.getBrickWithColor(name, selectedColor);
         console.log('Got brick from manager:', brick);
         if (brick) {
             // Clone the brick to avoid modifying the original
             this.ghostBrick = brick.clone();
-            this.ghostBrick.name = brick.name; // Preserve name
+            this.ghostBrick.name = name; // Preserve base name
             console.log('Created ghost brick:', this.ghostBrick);
 
             // Make it semi-transparent

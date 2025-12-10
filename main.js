@@ -71,6 +71,71 @@ const colorMap = {
     'Maroon': '#800000'
 };
 
+// Extract all unique colors from the GLTF file
+const extractColorsFromGLTF = (gltf) => {
+    console.log('extractColorsFromGLTF called with:', gltf);
+
+    // Add error handling for undefined or missing GLTF data
+    if (!gltf || !gltf.materials) {
+        console.warn('GLTF data or materials not available, using fallback colors');
+        // Return a default set of colors if GLTF data is not available
+        return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
+    }
+
+    const colors = new Set();
+
+    try {
+        // Extract colors from material names
+        gltf.materials.forEach(material => {
+            const materialName = material.name;
+            // Remove common prefixes/suffixes to isolate color name
+            let colorName = materialName
+                .replace(/^White$/, 'White') // Keep "White" as is
+                .replace(/^Baby_/, 'Baby ')
+                .replace(/^Dark_/, 'Dark ')
+                .replace(/_/g, ' ')
+                .trim();
+
+            // Skip transparent material
+            if (colorName !== 'Transparent' && colorName !== 'material') {
+                colors.add(colorName);
+            }
+        });
+    } catch (error) {
+        console.error('Error extracting colors from GLTF:', error);
+        // Return a default set of colors if there's an error
+        return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
+    }
+
+    const result = Array.from(colors);
+    console.log('Extracted colors:', result);
+    return result;
+};
+
+// Helper function to get contrast color for text
+const getContrastColor = (color) => {
+    // Convert THREE.Color to hex string if needed
+    let hexString;
+    if (color && color.getHexString) {
+        hexString = color.getHexString();
+    } else if (typeof color === 'string' && color.startsWith('#')) {
+        hexString = color.substring(1);
+    } else {
+        return '#000000'; // Default to black
+    }
+
+    // Convert hex to RGB
+    const r = parseInt(hexString.substring(0, 2), 16) / 255;
+    const g = parseInt(hexString.substring(2, 4), 16) / 255;
+    const b = parseInt(hexString.substring(4, 6), 16) / 255;
+
+    // Calculate luminance
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    // Return black or white depending on luminance
+    return luminance > 0.5 ? '#000000' : '#FFFFFF';
+};
+
 // Create a visual representation of the brick based on type and size
 const createBrickThumbnail = (type, width, depth) => {
     // Create image element for thumbnail
@@ -147,7 +212,9 @@ const sidebar = document.getElementById('sidebar');
 sidebar.insertBefore(controlsContainer, brickMenu);
 
 
-brickManager.onBricksLoaded = (brickNames) => {
+brickManager.onBricksLoaded = (brickNames, gltf) => {
+    console.log('onBricksLoaded called with:', { brickNames, gltf });
+
     // Create baseplate
     const baseplateInfo = brickManager.createBaseplate(60, 60);
 
@@ -159,10 +226,76 @@ brickManager.onBricksLoaded = (brickNames) => {
         brickManager.brickHeight
     );
 
-    brickMenu.innerHTML = ''; 
+    // Create color selection UI
+    const colorContainer = document.createElement('div');
+    colorContainer.id = 'color-selector';
+    colorContainer.style.marginBottom = '15px';
+    colorContainer.style.display = 'flex';
+    colorContainer.style.flexWrap = 'wrap';
+    colorContainer.style.gap = '5px';
+    colorContainer.style.justifyContent = 'center';
+
+    // Extract colors from the GLTF file
+    console.log('About to call extractColorsFromGLTF with gltf:', gltf);
+    const colors = extractColorsFromGLTF(gltf);
+
+    // Create color buttons
+    let firstColorButton = null;
+    colors.forEach(color => {
+        const colorButton = document.createElement('button');
+        colorButton.className = 'color-button';
+        colorButton.textContent = color;
+        colorButton.style.padding = '5px 10px';
+        colorButton.style.border = '2px solid #ccc';
+        colorButton.style.borderRadius = '4px';
+        colorButton.style.cursor = 'pointer';
+        colorButton.style.backgroundColor = 'white';
+
+        // Try to find the actual color from the material
+        const material = brickManager.bricks.get(brickNames.find(name => name.includes(color.replace(/ /g, '_'))));
+        if (material && material.material) {
+            const colorValue = material.material.color;
+            if (colorValue) {
+                colorButton.style.backgroundColor = `#${colorValue.getHexString()}`;
+                colorButton.style.color = getContrastColor(colorValue);
+            }
+        }
+
+        colorButton.addEventListener('click', () => {
+            // Remove selected class from all color buttons
+            document.querySelectorAll('.color-button').forEach(btn => {
+                btn.style.border = '2px solid #ccc';
+                btn.style.boxShadow = 'none';
+            });
+
+            // Add selected class to clicked button
+            colorButton.style.border = '2px solid #0066cc';
+            colorButton.style.boxShadow = '0 0 5px rgba(0, 102, 204, 0.5)';
+
+            // Store selected color
+            window.selectedColor = color;
+        });
+
+        colorContainer.appendChild(colorButton);
+
+        // Set first color as default selected
+        if (!firstColorButton) {
+            firstColorButton = colorButton;
+        }
+    });
+
+    // Insert color selector before brick menu
+    brickMenu.parentNode.insertBefore(colorContainer, brickMenu);
+
+    // Select first color by default
+    if (firstColorButton) {
+        firstColorButton.click();
+    }
+
+    brickMenu.innerHTML = '';
 
     // key: `${type}_${width}x${depth}`, value: {type, width, depth, bricks: []}
-    const sizeMap = new Map(); 
+    const sizeMap = new Map();
 
     brickNames.forEach(name => {
         const lowerName = name.toLowerCase();
@@ -184,36 +317,21 @@ brickManager.onBricksLoaded = (brickNames) => {
         let type = (height < brickManager.brickHeight / 2) ? 'Plate' : 'Brick';
 
         const key = `${type}_${width}x${depth}`;
-        
+
         if (!sizeMap.has(key)) {
             sizeMap.set(key, {type, width, depth, bricks: []});
         }
         sizeMap.get(key).bricks.push(name);
     });
 
-    // Helper to extract clean colors
-    const extractColor = (name, type, width, depth) => {
-        const lowerName = name.toLowerCase();
-        const typeLower = type.toLowerCase();
-        
-        // Remove known prefixes/suffixes to isolate color
-        // Example: "Brick 2x2 Red" -> "Red"
-        let tempName = name.replace(/brick/gi, '').replace(/plate/gi, '');
-        tempName = tempName.replace(`${width}x${depth}`, '').replace(`${width}X${depth}`, '');
-        tempName = tempName.replace(/_/g, ' ').trim();
-        
-        // If result is empty, fallback to original name
-        return tempName || name;
-    };
-
     // Convert Map to Array for Sorting
     const sortedItems = Array.from(sizeMap.values()).sort((a, b) => {
         // 1. Sort by Type (Brick first, then Plate)
         if (a.type !== b.type) return a.type.localeCompare(b.type);
-        
+
         // 2. Sort by Width
         if (a.width !== b.width) return a.width - b.width;
-        
+
         // 3. Sort by Depth
         return a.depth - b.depth;
     });
@@ -234,32 +352,19 @@ brickManager.onBricksLoaded = (brickNames) => {
         label.className = 'brick-name';
         label.textContent = `${type} ${width}x${depth}`;
 
-        const colorSelect = document.createElement('select');
-        colorSelect.className = 'color-select';
-        colorSelect.style.width = '100%';
-        colorSelect.style.marginTop = '5px';
-
-        bricks.forEach(brick => {
-            const color = extractColor(brick, type, width, depth);
-            const option = document.createElement('option');
-            option.value = brick;
-            option.textContent = color;
-            colorSelect.appendChild(option);
-        });
-
-        colorSelect.value = bricks[0];
+        // Store the first brick name as the base brick for this type/size
+        const baseBrickName = bricks[0];
 
         item.appendChild(preview);
         item.appendChild(label);
-        item.appendChild(colorSelect);
 
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             document.querySelectorAll('.brick-item').forEach(el => el.classList.remove('selected'));
             item.classList.add('selected');
 
-            const selectedBrick = colorSelect.value;
-            interactionManager.selectBrick(selectedBrick);
+            // Use the base brick name and apply the selected color
+            interactionManager.selectBrick(baseBrickName);
         });
 
         brickMenu.appendChild(item);
