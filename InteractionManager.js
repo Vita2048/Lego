@@ -252,6 +252,13 @@ export class InteractionManager {
                     hitBrick = actualHit;
                 }
 
+                // If the hit brick is part of a group, select the top-level group in the hierarchy
+                let current = hitBrick;
+                while (current.parent && current.parent.isGroup && this.placedBricks.includes(current.parent)) {
+                    current = current.parent;
+                }
+                hitBrick = current;
+
                 // Check if it's a placed brick or a child of a placed brick (for groups)
                 const isValidSelection = this.placedBricks.includes(hitBrick) ||
                                          (hitBrick.parent && this.placedBricks.includes(hitBrick.parent));

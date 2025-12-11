@@ -782,6 +782,8 @@ function deserializeXMLToCanvas(xmlContent) {
             const brick = deserializeBrickFromXML(element);
             if (brick) {
                 scene.add(brick);
+                // Ensure world matrix is updated for raycasting
+                brick.updateMatrixWorld(true);
                 interactionManager.placedBricks.push(brick);
             }
         }
@@ -861,7 +863,15 @@ function deserializeBrickFromXML(element) {
         if (colorName && colorMap[colorName]) {
             brick.traverse((child) => {
                 if (child.isMesh && child.material) {
-                    child.material.color.setStyle(colorMap[colorName]);
+                    // Recreate the material to ensure proper transparency state
+                    const hexColor = colorMap[colorName];
+                    child.material = new THREE.MeshStandardMaterial({
+                        color: hexColor,
+                        roughness: 0.3,
+                        metalness: 0.1,
+                        transparent: false,
+                        opacity: 1.0
+                    });
                 }
             });
         }
@@ -872,6 +882,9 @@ function deserializeBrickFromXML(element) {
     brick.position.set(position.x, position.y, position.z);
     brick.rotation.set(rotation.x, rotation.y, rotation.z);
     brick.scale.set(scale.x, scale.y, scale.z);
+
+    // Update matrix world for proper raycasting
+    brick.updateMatrixWorld();
 
     return brick;
 }
