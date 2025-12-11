@@ -239,45 +239,84 @@ export class InteractionManager {
             const gizmoAxis = this.getGizmoIntersection();
             if (gizmoAxis) return; // Gizmo handled by mousedown
 
-            // Check if clicking on a brick - use a more comprehensive search
+            // Check if clicking on a brick - use a comprehensive search
             let intersects = this.raycaster.intersectObjects(this.placedBricks, true);
 
             // If no direct hits, try a broader search including scene children
             if (intersects.length === 0) {
                 intersects = this.raycaster.intersectObjects(this.scene.children, true);
             }
+            
+            // If still no hits, try searching all mesh objects in the scene
+            if (intersects.length === 0) {
+                const allMeshes = [];
+                this.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        allMeshes.push(child);
+                    }
+                });
+                intersects = this.raycaster.intersectObjects(allMeshes, true);
+            }
 
             if (intersects.length > 0) {
                 // Find the actual intersected object in our hierarchy
                 let hitBrick = intersects[0].object;
+                
+                console.log('Clicked on object:', hitBrick.name, 'Type:', hitBrick.type, 'UUID:', hitBrick.uuid);
 
-                // Walk up the hierarchy to find the top-level placed brick
-                while (hitBrick.parent && hitBrick.parent !== this.scene) {
-                    // Check if this parent is in our placedBricks array
-                    if (this.placedBricks.includes(hitBrick.parent)) {
-                        hitBrick = hitBrick.parent;
-                        break;
+                // Use the same logic as findBrickByUuid - search through placedBricks for objects that contain this hit object
+                let foundObject = null;
+                
+                // First check if the hit object itself is in placedBricks
+                if (this.placedBricks.includes(hitBrick)) {
+                    foundObject = hitBrick;
+                    console.log('Direct hit on placed brick:', foundObject.name);
+                } else {
+                    // Search through all placedBricks to find one that contains this object
+                    for (const brick of this.placedBricks) {
+                        if (brick.isGroup && brick.children && brick.children.length > 0) {
+                            // Check if the hit object is in this group's hierarchy
+                            const found = brick.getObjectByProperty('uuid', hitBrick.uuid);
+                            if (found) {
+                                foundObject = hitBrick; // Select the individual brick, not the group
+                                console.log('Found individual brick in group:', foundObject.name, 'Group:', brick.name);
+                                break;
+                            }
+                        }
                     }
-                    hitBrick = hitBrick.parent;
+                    
+                    // If still not found, try walking up the hierarchy to find a placed brick
+                    if (!foundObject) {
+                        let current = hitBrick.parent;
+                        while (current && current !== this.scene) {
+                            if (this.placedBricks.includes(current)) {
+                                foundObject = current;
+                                console.log('Found parent placed brick:', foundObject.name);
+                                break;
+                            }
+                            current = current.parent;
+                        }
+                    }
                 }
 
-                // Verify this is actually a placed brick
-                const isValidSelection = this.placedBricks.includes(hitBrick);
-                
-                if (isValidSelection) {
+                // If we found something to select, select it
+                if (foundObject) {
                     const multi = event.ctrlKey || event.metaKey;
                     if (multi) {
-                        if (this.selectedObjects.has(hitBrick)) {
-                            this.deselectObject(hitBrick);
+                        if (this.selectedObjects.has(foundObject)) {
+                            this.deselectObject(foundObject);
                         } else {
-                            this.selectObject(hitBrick, true);
+                            this.selectObject(foundObject, true);
                         }
                     } else {
                         // Single select
-                        this.selectObject(hitBrick, false);
+                        this.selectObject(foundObject, false);
                     }
+                } else {
+                    console.log('No selectable object found for hit brick');
                 }
             } else {
+                console.log('No objects found at click position');
                 // Clicked empty space
                 this.deselectAll();
                 this.hideGizmo();
@@ -548,10 +587,43 @@ export class InteractionManager {
 
     deleteSelected() {
         const uuids = [];
-        this.selectedObjects.forEach(obj => {
-            uuids.push(obj.uuid);
-            this.scene.remove(obj);
-            this.placedBricks = this.placedBricks.filter(b => b !== obj);
+        const objectsToRemove = Array.from(this.selectedObjects);
+        
+        objectsToRemove.forEach(obj => {
+            // Check if this object is a child of a group
+            let parentGroup = null;
+            let current = obj.parent;
+            while (current && current !== this.scene) {
+                if (current.isGroup && this.placedBricks.includes(current)) {
+                    parentGroup = current;
+                    break;
+                }
+                current = current.parent;
+            }
+
+            if (parentGroup) {
+                // This is a child of a group - remove it completely from the scene
+                console.log('Deleting individual brick from group:', obj.name);
+                
+                uuids.push(obj.uuid);
+                
+                // Remove from group (don't add back to scene)
+                parentGroup.remove(obj);
+                
+                // Check if group is now empty and should be removed
+                if (parentGroup.children.length === 0) {
+                    console.log('Group is now empty, removing group:', parentGroup.name);
+                    this.scene.remove(parentGroup);
+                    this.placedBricks = this.placedBricks.filter(b => b !== parentGroup);
+                    uuids.push(parentGroup.uuid);
+                }
+            } else {
+                // This is a direct object in placedBricks (group or individual brick)
+                console.log('Removing direct object:', obj.name);
+                uuids.push(obj.uuid);
+                this.scene.remove(obj);
+                this.placedBricks = this.placedBricks.filter(b => b !== obj);
+            }
 
             const helper = this.selectionBoxHelpers.get(obj.uuid);
             if (helper) this.scene.remove(helper);
@@ -562,7 +634,9 @@ export class InteractionManager {
         this.hideGizmo();
 
         if (this.onBrickRemoved) {
-            uuids.forEach(uuid => this.onBrickRemoved(uuid));
+            // Remove duplicates from uuids array
+            const uniqueUuids = [...new Set(uuids)];
+            uniqueUuids.forEach(uuid => this.onBrickRemoved(uuid));
         }
     }
 
@@ -574,6 +648,17 @@ export class InteractionManager {
 
         this.selectedObjects.forEach(obj => {
             const cloned = obj.clone();
+
+            // Deep clone materials to prevent shared material references
+            cloned.traverse(child => {
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material = child.material.map(mat => mat.clone());
+                    } else {
+                        child.material = child.material.clone();
+                    }
+                }
+            });
 
             // Offset position to avoid overlap
             cloned.position.x += (offsetIndex + 1) * this.studSpacing * 2;
