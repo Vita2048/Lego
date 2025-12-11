@@ -479,67 +479,132 @@ function formatBrickName(name) {
 }
 
 
-function createBrickListItem(brick) {
-    const li = document.createElement('li');
-    li.className = 'placed-brick-item';
-    li.dataset.uuid = brick.uuid;
+function createBrickTreeItem(brick) {
+    const container = document.createElement('div');
+    container.className = 'tree-item';
+    container.dataset.uuid = brick.uuid;
 
-    // Create label with name
-    const label = document.createElement('span');
-    label.textContent = formatBrickName(brick.name);
+    // Create the main content row
+    const content = document.createElement('div');
+    content.className = 'tree-item-content';
 
-    const contentDiv = document.createElement('div');
-    contentDiv.style.display = 'flex';
-    contentDiv.style.justifyContent = 'space-between';
-    contentDiv.style.width = '100%';
-    contentDiv.appendChild(label);
-
-    li.appendChild(contentDiv);
-
-    // If it's a group, add children container
-    if (brick.name === 'Group' && brick.children.length > 0) {
-        const ul = document.createElement('ul');
-        ul.style.paddingLeft = '15px';
-        ul.style.listStyle = 'none';
-        ul.style.marginTop = '5px';
-
-        brick.children.forEach(child => {
-            if (child.isMesh || child.isGroup) {
-                ul.appendChild(createBrickListItem(child));
-            }
-        });
-        li.appendChild(ul);
+    // Toggle button for groups
+    const toggle = document.createElement('div');
+    toggle.className = 'tree-toggle';
+    const hasChildren = brick.name === 'Group' && brick.children.length > 0;
+    if (hasChildren) {
+        toggle.classList.add('has-children');
+        toggle.classList.add('expanded'); // Groups expanded by default
+    } else {
+        toggle.classList.add('no-children');
     }
 
-    li.addEventListener('click', (e) => {
+    // Thumbnail for groups or bricks
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'tree-thumbnail';
+    
+    if (brick.name === 'Group') {
+        // Folder icon for groups
+        const folderIcon = document.createElement('div');
+        folderIcon.style.fontSize = '1rem';
+        folderIcon.textContent = '📁';
+        thumbnail.appendChild(folderIcon);
+    } else {
+        // Use brick thumbnail image
+        const img = document.createElement('img');
+        // Extract brick type and dimensions from name (e.g., "Brick_2_2" -> "Brick 2x2")
+        const parts = brick.name.split('_');
+        if (parts.length >= 3) {
+            const type = parts[0];
+            const width = parts[1];
+            const depth = parts[2];
+            const thumbnailPath = `./lego_thumbnails/${type} ${width}x${depth}.png`;
+            img.src = thumbnailPath;
+            img.onerror = () => {
+                // Fallback to generic brick icon
+                img.src = `./lego_thumbnails/Brick 2x2.png`;
+            };
+        } else {
+            // Fallback for unknown format
+            img.src = `./lego_thumbnails/Brick 2x2.png`;
+        }
+        thumbnail.appendChild(img);
+    }
+
+    // Label
+    const label = document.createElement('div');
+    label.className = 'tree-label';
+    label.textContent = formatBrickName(brick.name);
+    label.title = formatBrickName(brick.name);
+
+    content.appendChild(toggle);
+    content.appendChild(thumbnail);
+    content.appendChild(label);
+
+    // Add click handler for selection
+    content.addEventListener('click', (e) => {
         e.stopPropagation();
 
         if (e.shiftKey && lastSelectedUuid) {
             // Shift+Click: Range Selection
-            const allItems = Array.from(document.querySelectorAll('.placed-brick-item'));
-            const lastIdx = allItems.findIndex(el => el.dataset.uuid === lastSelectedUuid);
-            const currentIdx = allItems.findIndex(el => el.dataset.uuid === brick.uuid);
+            const allItems = Array.from(document.querySelectorAll('.tree-item-content'));
+            const lastIdx = allItems.findIndex(el => {
+                const item = el.closest('.tree-item');
+                return item && item.dataset.uuid === lastSelectedUuid;
+            });
+            const currentIdx = allItems.findIndex(el => {
+                const item = el.closest('.tree-item');
+                return item && item.dataset.uuid === brick.uuid;
+            });
 
             if (lastIdx !== -1 && currentIdx !== -1) {
                 const start = Math.min(lastIdx, currentIdx);
                 const end = Math.max(lastIdx, currentIdx);
                 const rangeItems = allItems.slice(start, end + 1);
-                const uuids = rangeItems.map(el => el.dataset.uuid);
+                const uuids = rangeItems.map(el => {
+                    const item = el.closest('.tree-item');
+                    return item ? item.dataset.uuid : null;
+                }).filter(Boolean);
 
                 interactionManager.selectObjectsByUuids(uuids);
             }
         } else if (e.ctrlKey || e.metaKey) {
             // Ctrl+Click: Toggle
             interactionManager.toggleSelectionByUuid(brick.uuid);
-            lastSelectedUuid = brick.uuid; // Update anchor
+            lastSelectedUuid = brick.uuid;
         } else {
             // Single Click
             interactionManager.selectObjectByUuid(brick.uuid);
-            lastSelectedUuid = brick.uuid; // Update anchor
+            lastSelectedUuid = brick.uuid;
         }
     });
 
-    return li;
+    // Handle toggle expansion
+    if (hasChildren) {
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggle.classList.toggle('expanded');
+            childrenContainer.classList.toggle('expanded');
+        });
+    }
+
+    container.appendChild(content);
+
+    // Create children container
+    if (hasChildren) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.className = 'tree-children expanded'; // Expanded by default
+
+        brick.children.forEach(child => {
+            if (child.isMesh || child.isGroup) {
+                childrenContainer.appendChild(createBrickTreeItem(child));
+            }
+        });
+
+        container.appendChild(childrenContainer);
+    }
+
+    return container;
 }
 
 function renderBrickList() {
@@ -547,8 +612,8 @@ function renderBrickList() {
 
     // Only render top-level placed bricks
     interactionManager.placedBricks.forEach(brick => {
-        const li = createBrickListItem(brick);
-        placedBricksList.appendChild(li);
+        const item = createBrickTreeItem(brick);
+        placedBricksList.appendChild(item);
     });
 }
 
@@ -565,7 +630,7 @@ interactionManager.onBrickRemoved = (uuid) => {
 
 interactionManager.onSelectionChanged = (selectedUuids) => {
     // Remove selection from all items
-    document.querySelectorAll('.placed-brick-item').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.tree-item-content').forEach(el => el.classList.remove('selected'));
 
     // selectedUuids is now an Array (or empty array)
     const uuids = Array.isArray(selectedUuids) ? selectedUuids : (selectedUuids ? [selectedUuids] : []);
@@ -573,11 +638,11 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     let anyGroupSelected = false;
 
     uuids.forEach(uuid => {
-        const li = document.querySelector(`li[data-uuid="${uuid}"]`);
-        if (li) {
-            li.classList.add('selected');
+        const item = document.querySelector(`.tree-item[data-uuid="${uuid}"] .tree-item-content`);
+        if (item) {
+            item.classList.add('selected');
             if (uuids.indexOf(uuid) === 0) {
-                // li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                // item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
 
             // Update last selected if single selection (to sync external changes)

@@ -29,14 +29,16 @@
       </div>
       <div id="canvas-container"></div>
       <div id="right-sidebar">
-        <h3>Placed Bricks</h3>
-        <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-          <button id="group-btn" disabled>Group</button>
-          <button id="ungroup-btn" disabled>Ungroup</button>
+        <div class="sidebar-header">
+          <h3>Placed Bricks</h3>
+          <div style="display: flex; gap: 5px;">
+            <button id="group-btn" disabled>Group</button>
+            <button id="ungroup-btn" disabled>Ungroup</button>
+          </div>
         </div>
-        <ul id="placed-bricks-list">
+        <div id="placed-bricks-list" class="tree-view">
           <!-- Placed bricks will be listed here -->
-        </ul>
+        </div>
       </div>
     </div>
   </div>
