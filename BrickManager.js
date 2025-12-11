@@ -198,11 +198,42 @@ export class BrickManager {
     const clone = baseTemplate.clone();
     clone.geometry = baseTemplate.geometry.clone();
 
-    // Apply the target material if found, otherwise use the original
+    // Apply the target material if found, otherwise create one from colorMap
     if (targetMaterial) {
         clone.material = targetMaterial.clone();
     } else {
-        clone.material = baseTemplate.material.clone();
+        // Fallback to colorMap color
+        const colorMap = {
+            'Red': '#ff0000',
+            'Blue': '#0000ff',
+            'Green': '#00ff00',
+            'Yellow': '#ffff00',
+            'White': '#ffffff',
+            'Black': '#000000',
+            'Gray': '#808080',
+            'Grey': '#808080',
+            'Orange': '#ffa500',
+            'Purple': '#800080',
+            'Pink': '#ffc0cb',
+            'Brown': '#8B4513',
+            'Tan': '#D2B48C',
+            'LightGray': '#D3D3D3',
+            'DarkGray': '#A9A9A9',
+            'Cyan': '#00FFFF',
+            'Magenta': '#FF00FF',
+            'Lime': '#00FF00',
+            'Navy': '#000080',
+            'Teal': '#008080',
+            'Olive': '#808000',
+            'Maroon': '#800000'
+        };
+        const hexColor = colorMap[colorName];
+        if (hexColor) {
+            clone.material = baseTemplate.material.clone();
+            clone.material.color.setStyle(hexColor);
+        } else {
+            clone.material = baseTemplate.material.clone();
+        }
     }
 
     return clone;

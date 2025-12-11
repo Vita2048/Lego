@@ -1312,6 +1312,47 @@ findValidPlacementPosition(brick) {
         }
     }
 
+    // Method to update ghost brick color when color selection changes
+    updateGhostColor() {
+        if (this.ghostBrick && this.selectedBrickName) {
+            // Get the current selected color
+            const selectedColor = window.selectedColor || 'White';
+
+            // Remember current visibility and position/rotation
+            const wasVisible = this.ghostBrick.visible;
+            const currentPosition = this.ghostBrick.position.clone();
+            const currentRotation = this.ghostBrick.rotation.clone();
+
+            // Remove current ghost
+            this.removeGhost();
+
+            // Create new ghost with updated color
+            const brick = this.brickManager.getBrickWithColor(this.selectedBrickName, selectedColor);
+            if (brick) {
+                this.ghostBrick = brick.clone();
+                this.ghostBrick.name = this.selectedBrickName;
+
+                // Make it semi-transparent
+                this.ghostBrick.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.material.opacity = 0.5;
+                        child.material.depthWrite = false;
+                    }
+                });
+
+                // Restore position and rotation
+                this.ghostBrick.position.copy(currentPosition);
+                this.ghostBrick.rotation.copy(currentRotation);
+
+                // Restore visibility state
+                this.ghostBrick.visible = wasVisible;
+                this.scene.add(this.ghostBrick);
+            }
+        }
+    }
+
     removeGhost() {
         if (this.ghostBrick) {
             this.scene.remove(this.ghostBrick);

@@ -284,6 +284,13 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
                 colorButton.style.backgroundColor = `#${colorValue.getHexString()}`;
                 colorButton.style.color = getContrastColor(colorValue);
             }
+        } else {
+            // Fallback to colorMap if material not found
+            const fallbackColor = colorMap[color];
+            if (fallbackColor) {
+                colorButton.style.backgroundColor = fallbackColor;
+                colorButton.style.color = getContrastColor(fallbackColor);
+            }
         }
 
         colorButton.addEventListener('click', () => {
@@ -299,6 +306,11 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
 
             // Store selected color
             window.selectedColor = color;
+
+            // Update ghost brick color if in placement mode
+            if (interactionManager.mode === 'place') {
+                interactionManager.updateGhostColor();
+            }
         });
 
         colorContainer.appendChild(colorButton);
