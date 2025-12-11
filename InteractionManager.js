@@ -239,30 +239,31 @@ export class InteractionManager {
             const gizmoAxis = this.getGizmoIntersection();
             if (gizmoAxis) return; // Gizmo handled by mousedown
 
-            // Check if clicking on a brick
-            const intersects = this.raycaster.intersectObjects(this.placedBricks, true);
+            // Check if clicking on a brick - use a more comprehensive search
+            let intersects = this.raycaster.intersectObjects(this.placedBricks, true);
+
+            // If no direct hits, try a broader search including scene children
+            if (intersects.length === 0) {
+                intersects = this.raycaster.intersectObjects(this.scene.children, true);
+            }
 
             if (intersects.length > 0) {
                 // Find the actual intersected object in our hierarchy
                 let hitBrick = intersects[0].object;
 
-                // Get the object by its UUID to handle nested objects in groups
-                const actualHit = this.findBrickByUuid(hitBrick.uuid);
-                if (actualHit) {
-                    hitBrick = actualHit;
+                // Walk up the hierarchy to find the top-level placed brick
+                while (hitBrick.parent && hitBrick.parent !== this.scene) {
+                    // Check if this parent is in our placedBricks array
+                    if (this.placedBricks.includes(hitBrick.parent)) {
+                        hitBrick = hitBrick.parent;
+                        break;
+                    }
+                    hitBrick = hitBrick.parent;
                 }
 
-                // If the hit brick is part of a group, select the top-level group in the hierarchy
-                let current = hitBrick;
-                while (current.parent && current.parent.isGroup && this.placedBricks.includes(current.parent)) {
-                    current = current.parent;
-                }
-                hitBrick = current;
-
-                // Check if it's a placed brick or a child of a placed brick (for groups)
-                const isValidSelection = this.placedBricks.includes(hitBrick) ||
-                                         (hitBrick.parent && this.placedBricks.includes(hitBrick.parent));
-
+                // Verify this is actually a placed brick
+                const isValidSelection = this.placedBricks.includes(hitBrick);
+                
                 if (isValidSelection) {
                     const multi = event.ctrlKey || event.metaKey;
                     if (multi) {

@@ -782,8 +782,20 @@ function deserializeXMLToCanvas(xmlContent) {
             const brick = deserializeBrickFromXML(element);
             if (brick) {
                 scene.add(brick);
-                // Ensure world matrix is updated for raycasting
+                
+                // Force matrix world update and ensure proper raycasting setup
                 brick.updateMatrixWorld(true);
+                
+                // Ensure all child meshes have proper materials for raycasting
+                brick.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        // Ensure material is properly configured for raycasting
+                        if (!child.material.userData.isRaycastable) {
+                            child.material.userData.isRaycastable = true;
+                        }
+                    }
+                });
+                
                 interactionManager.placedBricks.push(brick);
             }
         }
@@ -883,8 +895,17 @@ function deserializeBrickFromXML(element) {
     brick.rotation.set(rotation.x, rotation.y, rotation.z);
     brick.scale.set(scale.x, scale.y, scale.z);
 
-    // Update matrix world for proper raycasting
-    brick.updateMatrixWorld();
+    // Force multiple matrix updates to ensure proper raycasting
+    brick.updateMatrixWorld(true);
+    
+    // Also ensure all children have updated matrices
+    if (brick.isGroup) {
+        brick.traverse((child) => {
+            if (child.isMesh) {
+                child.updateMatrixWorld(true);
+            }
+        });
+    }
 
     return brick;
 }
