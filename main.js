@@ -579,6 +579,19 @@ function createBrickTreeItem(brick) {
         }
     });
 
+    // Create children container first (before toggle handler)
+    let childrenContainer = null;
+    if (hasChildren) {
+        childrenContainer = document.createElement('div');
+        childrenContainer.className = 'tree-children expanded'; // Expanded by default
+
+        brick.children.forEach(child => {
+            if (child.isMesh || child.isGroup) {
+                childrenContainer.appendChild(createBrickTreeItem(child));
+            }
+        });
+    }
+
     // Handle toggle expansion
     if (hasChildren) {
         toggle.addEventListener('click', (e) => {
@@ -590,17 +603,8 @@ function createBrickTreeItem(brick) {
 
     container.appendChild(content);
 
-    // Create children container
-    if (hasChildren) {
-        const childrenContainer = document.createElement('div');
-        childrenContainer.className = 'tree-children expanded'; // Expanded by default
-
-        brick.children.forEach(child => {
-            if (child.isMesh || child.isGroup) {
-                childrenContainer.appendChild(createBrickTreeItem(child));
-            }
-        });
-
+    // Append children container
+    if (childrenContainer) {
         container.appendChild(childrenContainer);
     }
 
