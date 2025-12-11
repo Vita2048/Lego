@@ -209,7 +209,7 @@ let currentMode = 'select';
 
 // Function to update UI based on mode
 function updateModeUI() {
-    const selectedCount = interactionManager.selectedUuids ? interactionManager.selectedUuids.length : 0;
+    const selectedCount = interactionManager.selectedObjects.size;
     if (currentMode === 'select') {
         selectModeBtn.classList.add('active');
         deleteBtn.disabled = false;
@@ -589,6 +589,11 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
             anyGroupSelected = true;
         }
     });
+
+    // Sync currentMode with selection
+    if (selectedCount > 0) {
+        currentMode = 'select';
+    }
 
     // Handle color button highlighting
     if (selectedCount === 1) {
