@@ -269,3 +269,9 @@ canvas {
   border: 2px solid #0066cc;
   box-shadow: 0 0 5px rgba(0, 102, 204, 0.5);
 }
+
+button.active {
+  background-color: #535bf2;
+  border: 2px solid #747bff;
+  color: white;
+}

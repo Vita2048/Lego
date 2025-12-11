@@ -164,23 +164,48 @@ const createBrickThumbnail = (type, width, depth) => {
 };
 
 
-// Add Mode Controls
-const controlsContainer = document.createElement('div');
-controlsContainer.style.padding = '10px';
-controlsContainer.style.borderBottom = '1px solid #333';
-controlsContainer.style.marginBottom = '10px';
-controlsContainer.style.display = 'flex';
-controlsContainer.style.gap = '10px';
+// Mode state
+let currentMode = 'select';
+
+// Function to update UI based on mode
+function updateModeUI() {
+    const selectedCount = interactionManager.selectedUuids ? interactionManager.selectedUuids.length : 0;
+    if (currentMode === 'select') {
+        selectModeBtn.classList.add('active');
+        deleteBtn.disabled = false;
+        duplicateBtn.disabled = selectedCount === 0;
+    } else {
+        selectModeBtn.classList.remove('active');
+        deleteBtn.disabled = true;
+        duplicateBtn.disabled = true;
+    }
+}
+
+// Modes section
+const modesContainer = document.createElement('div');
+modesContainer.style.padding = '10px';
+modesContainer.style.borderBottom = '1px solid #333';
+modesContainer.style.marginBottom = '10px';
 
 const selectModeBtn = document.createElement('button');
 selectModeBtn.textContent = 'Select Mode (Esc)';
 selectModeBtn.style.padding = '5px 10px';
 selectModeBtn.style.cursor = 'pointer';
 selectModeBtn.onclick = () => {
+    currentMode = 'select';
     interactionManager.setMode('select');
     // Clear brick selection in menu
     document.querySelectorAll('.brick-item').forEach(el => el.classList.remove('selected'));
+    updateModeUI();
 };
+
+// Actions section
+const actionsContainer = document.createElement('div');
+actionsContainer.style.padding = '10px';
+actionsContainer.style.borderBottom = '1px solid #333';
+actionsContainer.style.marginBottom = '10px';
+actionsContainer.style.display = 'flex';
+actionsContainer.style.gap = '10px';
 
 const deleteBtn = document.createElement('button');
 deleteBtn.textContent = 'Delete (Del)';
@@ -198,18 +223,18 @@ const duplicateBtn = document.createElement('button');
 duplicateBtn.textContent = 'Duplicate';
 duplicateBtn.style.padding = '5px 10px';
 duplicateBtn.style.cursor = 'pointer';
-duplicateBtn.disabled = true;
 duplicateBtn.onclick = () => {
     interactionManager.duplicateSelected();
 };
 
-controlsContainer.appendChild(selectModeBtn);
-controlsContainer.appendChild(deleteBtn);
-controlsContainer.appendChild(duplicateBtn);
+modesContainer.appendChild(selectModeBtn);
+actionsContainer.appendChild(deleteBtn);
+actionsContainer.appendChild(duplicateBtn);
 
-// Insert controls before the menu
+// Insert sections before the menu
 const sidebar = document.getElementById('sidebar');
-sidebar.insertBefore(controlsContainer, brickMenu);
+sidebar.insertBefore(modesContainer, brickMenu);
+sidebar.insertBefore(actionsContainer, brickMenu);
 
 
 brickManager.onBricksLoaded = (brickNames, gltf) => {
@@ -284,13 +309,28 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
         }
     });
 
-    // Insert color selector before brick menu
-    brickMenu.parentNode.insertBefore(colorContainer, brickMenu);
+    // Insert color selector after actions, with divider
+    const colorsContainer = document.createElement('div');
+    colorsContainer.style.padding = '10px';
+    colorsContainer.style.borderBottom = '1px solid #333';
+    colorsContainer.style.marginBottom = '10px';
+    colorsContainer.appendChild(colorContainer);
+
+    sidebar.insertBefore(colorsContainer, brickMenu);
+
+    // Bricks section
+    const bricksContainer = document.createElement('div');
+    bricksContainer.style.padding = '10px';
+    bricksContainer.appendChild(brickMenu);
+    sidebar.appendChild(bricksContainer);
 
     // Select first color by default
     if (firstColorButton) {
         firstColorButton.click();
     }
+
+    // Initialize UI
+    updateModeUI();
 
     brickMenu.innerHTML = '';
 
@@ -362,6 +402,10 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
             e.stopPropagation();
             document.querySelectorAll('.brick-item').forEach(el => el.classList.remove('selected'));
             item.classList.add('selected');
+
+            // Switch to add brick mode
+            currentMode = 'addBrick';
+            updateModeUI();
 
             // Use the base brick name and apply the selected color
             interactionManager.selectBrick(baseBrickName);
@@ -518,7 +562,7 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     // Update button states
     if (groupBtn) groupBtn.disabled = selectedCount < 2;
     if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
-    if (duplicateBtn) duplicateBtn.disabled = selectedCount === 0;
+    updateModeUI();
 };
 
 // Button Handlers
