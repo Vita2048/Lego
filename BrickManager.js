@@ -185,55 +185,54 @@ export class BrickManager {
     const baseTemplate = this.bricks.get(baseName);
     if (!baseTemplate) return null;
 
-    // Find a brick with the matching color to get the material
-    let targetMaterial = null;
-    for (const [brickName, brickTemplate] of this.bricks) {
-        if (brickName.includes(colorName.replace(/ /g, '_'))) {
-            targetMaterial = brickTemplate.material;
-            break;
-        }
-    }
-
     // Clone the base brick
     const clone = baseTemplate.clone();
     clone.geometry = baseTemplate.geometry.clone();
 
-    // Apply the target material if found, otherwise create one from colorMap
-    if (targetMaterial) {
-        clone.material = targetMaterial.clone();
+    // Always use colorMap for consistent basic colors
+    const colorMap = {
+        'Red': '#ff0000',
+        'Blue': '#0000ff',
+        'Green': '#00ff00',
+        'Yellow': '#ffff00',
+        'White': '#ffffff',
+        'Black': '#000000',
+        'Gray': '#808080',
+        'Grey': '#808080',
+        'Orange': '#ffa500',
+        'Purple': '#800080',
+        'Pink': '#ffc0cb',
+        'Brown': '#8B4513',
+        'Tan': '#D2B48C',
+        'LightGray': '#D3D3D3',
+        'DarkGray': '#A9A9A9',
+        'Cyan': '#00FFFF',
+        'Magenta': '#FF00FF',
+        'Lime': '#00FF00',
+        'Navy': '#000080',
+        'Teal': '#008080',
+        'Olive': '#808000',
+        'Maroon': '#800000'
+    };
+    const hexColor = colorMap[colorName];
+    if (hexColor) {
+        // Create a new material with consistent properties
+        clone.material = new THREE.MeshStandardMaterial({
+            color: hexColor,
+            roughness: 0.3,
+            metalness: 0.1,
+            transparent: false,
+            opacity: 1.0
+        });
     } else {
-        // Fallback to colorMap color
-        const colorMap = {
-            'Red': '#ff0000',
-            'Blue': '#0000ff',
-            'Green': '#00ff00',
-            'Yellow': '#ffff00',
-            'White': '#ffffff',
-            'Black': '#000000',
-            'Gray': '#808080',
-            'Grey': '#808080',
-            'Orange': '#ffa500',
-            'Purple': '#800080',
-            'Pink': '#ffc0cb',
-            'Brown': '#8B4513',
-            'Tan': '#D2B48C',
-            'LightGray': '#D3D3D3',
-            'DarkGray': '#A9A9A9',
-            'Cyan': '#00FFFF',
-            'Magenta': '#FF00FF',
-            'Lime': '#00FF00',
-            'Navy': '#000080',
-            'Teal': '#008080',
-            'Olive': '#808000',
-            'Maroon': '#800000'
-        };
-        const hexColor = colorMap[colorName];
-        if (hexColor) {
-            clone.material = baseTemplate.material.clone();
-            clone.material.color.setStyle(hexColor);
-        } else {
-            clone.material = baseTemplate.material.clone();
-        }
+        // Fallback to white if color not found
+        clone.material = new THREE.MeshStandardMaterial({
+            color: '#ffffff',
+            roughness: 0.3,
+            metalness: 0.1,
+            transparent: false,
+            opacity: 1.0
+        });
     }
 
     return clone;

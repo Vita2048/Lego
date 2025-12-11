@@ -71,45 +71,9 @@ const colorMap = {
     'Maroon': '#800000'
 };
 
-// Extract all unique colors from the GLTF file
-const extractColorsFromGLTF = (gltf) => {
-    console.log('extractColorsFromGLTF called with:', gltf);
-
-    // Add error handling for undefined or missing GLTF data
-    if (!gltf || !gltf.materials) {
-        console.warn('GLTF data or materials not available, using fallback colors');
-        // Return a default set of colors if GLTF data is not available
-        return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
-    }
-
-    const colors = new Set();
-
-    try {
-        // Extract colors from material names
-        gltf.materials.forEach(material => {
-            const materialName = material.name;
-            // Remove common prefixes/suffixes to isolate color name
-            let colorName = materialName
-                .replace(/^White$/, 'White') // Keep "White" as is
-                .replace(/^Baby_/, 'Baby ')
-                .replace(/^Dark_/, 'Dark ')
-                .replace(/_/g, ' ')
-                .trim();
-
-            // Skip transparent material
-            if (colorName !== 'Transparent' && colorName !== 'material') {
-                colors.add(colorName);
-            }
-        });
-    } catch (error) {
-        console.error('Error extracting colors from GLTF:', error);
-        // Return a default set of colors if there's an error
-        return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
-    }
-
-    const result = Array.from(colors);
-    console.log('Extracted colors:', result);
-    return result;
+// Use fixed basic colors instead of extracting from GLTF
+const getBasicColors = () => {
+    return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
 };
 
 // Helper function to get contrast color for text
@@ -260,9 +224,8 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
     colorContainer.style.gap = '5px';
     colorContainer.style.justifyContent = 'center';
 
-    // Extract colors from the GLTF file
-    console.log('About to call extractColorsFromGLTF with gltf:', gltf);
-    const colors = extractColorsFromGLTF(gltf);
+    // Use basic colors
+    const colors = getBasicColors();
 
     // Create color buttons
     let firstColorButton = null;
@@ -276,21 +239,11 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
         colorButton.style.cursor = 'pointer';
         colorButton.style.backgroundColor = 'white';
 
-        // Try to find the actual color from the material
-        const material = brickManager.bricks.get(brickNames.find(name => name.includes(color.replace(/ /g, '_'))));
-        if (material && material.material) {
-            const colorValue = material.material.color;
-            if (colorValue) {
-                colorButton.style.backgroundColor = `#${colorValue.getHexString()}`;
-                colorButton.style.color = getContrastColor(colorValue);
-            }
-        } else {
-            // Fallback to colorMap if material not found
-            const fallbackColor = colorMap[color];
-            if (fallbackColor) {
-                colorButton.style.backgroundColor = fallbackColor;
-                colorButton.style.color = getContrastColor(fallbackColor);
-            }
+        // Use colorMap for consistent basic colors
+        const colorHex = colorMap[color];
+        if (colorHex) {
+            colorButton.style.backgroundColor = colorHex;
+            colorButton.style.color = getContrastColor(colorHex);
         }
 
         colorButton.addEventListener('click', () => {
