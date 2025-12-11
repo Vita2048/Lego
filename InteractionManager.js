@@ -590,32 +590,27 @@ export class InteractionManager {
         const objectsToRemove = Array.from(this.selectedObjects);
         
         objectsToRemove.forEach(obj => {
-            // Check if this object is a child of a group
-            let parentGroup = null;
-            let current = obj.parent;
-            while (current && current !== this.scene) {
-                if (current.isGroup && this.placedBricks.includes(current)) {
-                    parentGroup = current;
-                    break;
-                }
-                current = current.parent;
+            // Find the immediate parent group (closest parent)
+            let immediateParentGroup = null;
+            if (obj.parent && obj.parent !== this.scene && obj.parent.isGroup) {
+                immediateParentGroup = obj.parent;
             }
 
-            if (parentGroup) {
+            if (immediateParentGroup) {
                 // This is a child of a group - remove it completely from the scene
                 console.log('Deleting individual brick from group:', obj.name);
                 
                 uuids.push(obj.uuid);
                 
                 // Remove from group (don't add back to scene)
-                parentGroup.remove(obj);
+                immediateParentGroup.remove(obj);
                 
                 // Check if group is now empty and should be removed
-                if (parentGroup.children.length === 0) {
-                    console.log('Group is now empty, removing group:', parentGroup.name);
-                    this.scene.remove(parentGroup);
-                    this.placedBricks = this.placedBricks.filter(b => b !== parentGroup);
-                    uuids.push(parentGroup.uuid);
+                if (immediateParentGroup.children.length === 0) {
+                    console.log('Group is now empty, removing group:', immediateParentGroup.name);
+                    this.scene.remove(immediateParentGroup);
+                    this.placedBricks = this.placedBricks.filter(b => b !== immediateParentGroup);
+                    uuids.push(immediateParentGroup.uuid);
                 }
             } else {
                 // This is a direct object in placedBricks (group or individual brick)
