@@ -71,6 +71,82 @@ const colorMap = {
     'Maroon': '#800000'
 };
 
+// Reverse color map for detecting color from hex
+const reverseColorMap = {};
+for (const [name, hex] of Object.entries(colorMap)) {
+    reverseColorMap[hex.toLowerCase()] = name;
+}
+
+// Function to get color name from brick material
+function getColorNameFromBrick(brick) {
+    if (brick && brick.material && brick.material.color) {
+        const hex = '#' + brick.material.color.getHexString();
+        return reverseColorMap[hex.toLowerCase()] || 'White';
+    }
+    return 'White';
+}
+
+// Global variables for color buttons
+let colorButtons = {};
+
+// Function to set selected color (for placement mode)
+function setSelectedColor(color) {
+    // Remove selected styling from all color buttons
+    Object.values(colorButtons).forEach(btn => {
+        btn.style.border = '2px solid #ccc';
+        btn.style.boxShadow = 'none';
+    });
+
+    // Add selected styling to clicked button
+    const button = colorButtons[color];
+    if (button) {
+        button.style.border = '4px solid #0066cc';
+        button.style.boxShadow = '0 0 5px rgba(0, 102, 204, 0.5)';
+    }
+
+    // Store selected color
+    window.selectedColor = color;
+
+    // Update ghost brick color if in placement mode
+    if (interactionManager.mode === 'place') {
+        interactionManager.updateGhostColor();
+    }
+}
+
+// Function to highlight color button for selected brick
+function highlightColorButton(color) {
+    // Remove selected styling from all color buttons
+    Object.values(colorButtons).forEach(btn => {
+        btn.style.border = '2px solid #ccc';
+        btn.style.boxShadow = 'none';
+    });
+
+    // Add selected styling to matching button
+    const button = colorButtons[color];
+    if (button) {
+        button.style.border = '4px solid #0066cc';
+        button.style.boxShadow = '0 0 5px rgba(0, 102, 204, 0.5)';
+    }
+}
+
+// Function to change color of selected bricks
+function changeSelectedBricksColor(newColor) {
+    const colorHex = colorMap[newColor];
+    if (!colorHex) return;
+
+    interactionManager.selectedObjects.forEach(brick => {
+        // Recursively change color for groups
+        brick.traverse((child) => {
+            if (child.isMesh && child.material) {
+                child.material.color.setStyle(colorHex);
+            }
+        });
+    });
+
+    // Highlight the new color button
+    highlightColorButton(newColor);
+}
+
 // Use fixed basic colors instead of extracting from GLTF
 const getBasicColors = () => {
     return ['White', 'Red', 'Blue', 'Green', 'Yellow', 'Black', 'Gray', 'Orange'];
@@ -247,26 +323,18 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
         }
 
         colorButton.addEventListener('click', () => {
-            // Remove selected class from all color buttons
-            document.querySelectorAll('.color-button').forEach(btn => {
-                btn.style.border = '2px solid #ccc';
-                btn.style.boxShadow = 'none';
-            });
-
-            // Add selected class to clicked button
-            colorButton.style.border = '2px solid #0066cc';
-            colorButton.style.boxShadow = '0 0 5px rgba(0, 102, 204, 0.5)';
-
-            // Store selected color
-            window.selectedColor = color;
-
-            // Update ghost brick color if in placement mode
-            if (interactionManager.mode === 'place') {
-                interactionManager.updateGhostColor();
+            // Check if there are selected bricks
+            if (interactionManager.selectedObjects.size > 0) {
+                // Change color of selected bricks
+                changeSelectedBricksColor(color);
+            } else {
+                // Normal behavior: set selected color for placement
+                setSelectedColor(color);
             }
         });
 
         colorContainer.appendChild(colorButton);
+        colorButtons[color] = colorButton;
 
         // Set first color as default selected
         if (!firstColorButton) {
@@ -290,9 +358,7 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
     sidebar.appendChild(bricksContainer);
 
     // Select first color by default
-    if (firstColorButton) {
-        firstColorButton.click();
-    }
+    setSelectedColor('White');
 
     // Initialize UI
     updateModeUI();
@@ -524,6 +590,22 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
         }
     });
 
+    // Handle color button highlighting
+    if (selectedCount === 1) {
+        // Single brick selected - highlight its color
+        const selectedBrick = interactionManager.placedBricks.find(b => b.uuid === uuids[0]);
+        if (selectedBrick) {
+            const colorName = getColorNameFromBrick(selectedBrick);
+            highlightColorButton(colorName);
+        }
+    } else if (selectedCount === 0) {
+        // No selection - show selected color for placement
+        if (window.selectedColor) {
+            highlightColorButton(window.selectedColor);
+        }
+    }
+    // For multiple selection, keep current highlight or clear?
+
     // Update button states
     if (groupBtn) groupBtn.disabled = selectedCount < 2;
     if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
@@ -666,6 +748,7 @@ function serializeBrickToXML(brick) {
         xml += `    <position x="${brick.position.x}" y="${brick.position.y}" z="${brick.position.z}" />\n`;
         xml += `    <rotation x="${brick.rotation.x}" y="${brick.rotation.y}" z="${brick.rotation.z}" />\n`;
         xml += `    <scale x="${brick.scale.x}" y="${brick.scale.y}" z="${brick.scale.z}" />\n`;
+        xml += `    <color name="${getColorNameFromBrick(brick)}" />\n`;
         xml += '  </brick>\n';
     }
 
@@ -763,6 +846,21 @@ function deserializeBrickFromXML(element) {
             return null;
         }
         brick.uuid = uuid;
+    }
+    // Only apply color to individual bricks, not groups
+    if (element.tagName === 'brick') {
+
+    const colorElement = element.getElementsByTagName('color')[0];
+    if (colorElement) {
+        const colorName = colorElement.getAttribute('name');
+        if (colorName && colorMap[colorName]) {
+            brick.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material.color.setStyle(colorMap[colorName]);
+                }
+            });
+        }
+    }
     }
 
     // Apply transforms

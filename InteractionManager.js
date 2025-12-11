@@ -243,16 +243,20 @@ export class InteractionManager {
             const intersects = this.raycaster.intersectObjects(this.placedBricks, true);
 
             if (intersects.length > 0) {
-                // Find visible top-level object
+                // Find the actual intersected object in our hierarchy
                 let hitBrick = intersects[0].object;
 
-                // Traverse up until we find a direct child of scene OR a known placed brick
-                // Since we support groups now, a "placed brick" might be a Group or a Mesh
-                while (hitBrick.parent && !this.placedBricks.includes(hitBrick)) {
-                    hitBrick = hitBrick.parent;
+                // Get the object by its UUID to handle nested objects in groups
+                const actualHit = this.findBrickByUuid(hitBrick.uuid);
+                if (actualHit) {
+                    hitBrick = actualHit;
                 }
 
-                if (this.placedBricks.includes(hitBrick)) {
+                // Check if it's a placed brick or a child of a placed brick (for groups)
+                const isValidSelection = this.placedBricks.includes(hitBrick) ||
+                                         (hitBrick.parent && this.placedBricks.includes(hitBrick.parent));
+
+                if (isValidSelection) {
                     const multi = event.ctrlKey || event.metaKey;
                     if (multi) {
                         if (this.selectedObjects.has(hitBrick)) {
