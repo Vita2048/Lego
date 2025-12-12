@@ -173,7 +173,60 @@ export class InteractionManager {
         }
 
         this.gizmo.position.copy(center);
+        
+        // Scale gizmo based on selected object size
+        this.updateGizmoScale(box);
+        
         this.gizmo.visible = true;
+    }
+
+    updateGizmoScale(box) {
+        // Calculate the size of the selection box
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        
+        // Find the largest dimension
+        const maxDimension = Math.max(size.x, size.y, size.z);
+        
+        // Minimum gizmo scale (when object is very small)
+        const minArrowLength = 4.0;
+        const minRotationRingRadius = 3.0;
+        
+        // Calculate required scale: object size + 25% margin
+        // The gizmo should extend to at least maxDimension * 0.625 (1.25 * 0.5, since gizmo extends from center)
+        const requiredReach = (maxDimension * 1.25) / 2; // 25% outside means 1.25x from center
+        
+        // Scale factor: how much we need to scale the gizmo
+        // Use the larger of: minimum size or required reach
+        const scaleMultiplier = Math.max(1.0, requiredReach / minArrowLength);
+        
+        // Apply scaling to arrows
+        const scaledArrowLength = minArrowLength * scaleMultiplier;
+        const scaledHeadLength = 0.6 * scaleMultiplier;
+        const scaledShaftRadius = 0.08 * scaleMultiplier;
+        const scaledHeadRadius = 0.2 * scaleMultiplier;
+        
+        // Update arrow dimensions
+        this.gizmo.traverse((child) => {
+            if (child.name === 'gizmo-x' || child.name === 'gizmo-y' || child.name === 'gizmo-z') {
+                // Scale the arrow group
+                const baseScale = 1.0;
+                child.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+            }
+        });
+        
+        // Update rotation ring radius
+        const scaledRotationRingRadius = minRotationRingRadius * scaleMultiplier;
+        if (this.gizmoRotationRing) {
+            this.gizmoRotationRing.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+        }
+        
+        // Update center handle size
+        if (this.gizmoCenterHandle) {
+            const baseRadius = 0.4;
+            const scaledCenterRadius = baseRadius * scaleMultiplier;
+            this.gizmoCenterHandle.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+        }
     }
 
     updateGizmoPosition() {
@@ -182,6 +235,7 @@ export class InteractionManager {
             const box = new THREE.Box3();
 
             this.selectedObjects.forEach(obj => {
+                obj.updateMatrixWorld(true);
                 box.expandByObject(obj);
             });
 
@@ -198,6 +252,9 @@ export class InteractionManager {
             }
 
             this.gizmo.position.copy(center);
+            
+            // Update gizmo scale based on current selection size
+            this.updateGizmoScale(box);
 
             // Update all helpers
             this.selectionBoxHelpers.forEach(helper => helper.update());
@@ -1571,7 +1628,7 @@ findValidPlacementPosition(brick) {
             // Reset center handle
             if (this.gizmoCenterHandle) {
                 this.gizmoCenterHandle.material.color.setHex(0xffffff);
-                this.gizmoCenterHandle.scale.set(1, 1, 1);
+                // Don't reset scale - let it maintain dynamic scale
             }
 
             // Reset rotation ring
@@ -1581,7 +1638,7 @@ findValidPlacementPosition(brick) {
                         child.material.color.setHex(0xffa500);
                     }
                 });
-                this.gizmoRotationRing.scale.set(1, 1, 1);
+                // Don't reset scale - let it maintain dynamic scale
             }
 
             // Reset arrows
@@ -1594,7 +1651,7 @@ findValidPlacementPosition(brick) {
                             child.material.color.setHex(originalColor);
                         }
                     });
-                    arrow.scale.set(1, 1, 1);
+                    // Don't reset scale - let it maintain dynamic scale
                 }
             }
         } catch (error) {
