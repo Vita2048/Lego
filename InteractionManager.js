@@ -64,7 +64,7 @@ export class InteractionManager {
         // Recursive helper function
         const searchInObject = (obj) => {
             if (obj.uuid === uuid) return obj;
-            
+
             // If this is a group, search its children
             if (obj.isGroup && obj.children && obj.children.length > 0) {
                 for (const child of obj.children) {
@@ -72,7 +72,7 @@ export class InteractionManager {
                     if (found) return found;
                 }
             }
-            
+
             return null;
         };
 
@@ -81,7 +81,7 @@ export class InteractionManager {
             const found = searchInObject(brick);
             if (found) return found;
         }
-        
+
         return null;
     }
 
@@ -173,10 +173,10 @@ export class InteractionManager {
         }
 
         this.gizmo.position.copy(center);
-        
+
         // Scale gizmo based on selected object size
         this.updateGizmoScale(box);
-        
+
         this.gizmo.visible = true;
     }
 
@@ -184,22 +184,22 @@ export class InteractionManager {
         // Calculate the size of the selection box
         const size = new THREE.Vector3();
         box.getSize(size);
-        
+
         // Find the largest dimension
         const maxDimension = Math.max(size.x, size.y, size.z);
-        
+
         // Minimum gizmo scale (when object is very small)
         const minArrowLength = 4.0;
         const minRotationRingRadius = 3.0;
-        
+
         // Calculate required scale: object size + 25% margin
         // The gizmo should extend to at least maxDimension * 0.625 (1.25 * 0.5, since gizmo extends from center)
         const requiredReach = (maxDimension * 1.25) / 2; // 25% outside means 1.25x from center
-        
+
         // Scale factor: how much we need to scale the gizmo
         // Use the larger of: minimum size or required reach
         const scaleMultiplier = Math.max(1.0, requiredReach / minArrowLength);
-        
+
         // Apply scaling to arrows
         this.gizmo.traverse((child) => {
             if (child.name === 'gizmo-x' || child.name === 'gizmo-y' || child.name === 'gizmo-z') {
@@ -207,31 +207,31 @@ export class InteractionManager {
                 child.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
             }
         });
-        
+
         // Update rotation ring radius
         if (this.gizmoRotationRing) {
             this.gizmoRotationRing.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
         }
-        
+
         // Update center handle size
         if (this.gizmoCenterHandle) {
             this.gizmoCenterHandle.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
         }
-        
+
         // Update label positions and sizes
         if (this.gizmoLabels) {
             const labelDistance = 4.5 * scaleMultiplier;
-            
+
             if (this.gizmoLabels.x) {
                 this.gizmoLabels.x.position.set(labelDistance, 0, 0);
                 this.gizmoLabels.x.scale.set(scaleMultiplier, scaleMultiplier, 1);
             }
-            
+
             if (this.gizmoLabels.y) {
                 this.gizmoLabels.y.position.set(0, labelDistance, 0);
                 this.gizmoLabels.y.scale.set(scaleMultiplier, scaleMultiplier, 1);
             }
-            
+
             if (this.gizmoLabels.z) {
                 this.gizmoLabels.z.position.set(0, 0, labelDistance);
                 this.gizmoLabels.z.scale.set(scaleMultiplier, scaleMultiplier, 1);
@@ -262,7 +262,7 @@ export class InteractionManager {
             }
 
             this.gizmo.position.copy(center);
-            
+
             // Update gizmo scale based on current selection size
             this.updateGizmoScale(box);
 
@@ -336,7 +336,7 @@ export class InteractionManager {
             if (intersects.length === 0) {
                 intersects = this.raycaster.intersectObjects(this.scene.children, true);
             }
-            
+
             // If still no hits, try searching all mesh objects in the scene
             if (intersects.length === 0) {
                 const allMeshes = [];
@@ -494,12 +494,14 @@ export class InteractionManager {
                     const currentVector = currentPoint.clone().sub(gizmoCenter).normalize();
 
                     // Calculate angle difference
+                    // Calculate angle difference
                     const angle = Math.atan2(currentVector.z, currentVector.x) - Math.atan2(startVector.z, startVector.x);
 
                     console.log('Rotation angle:', angle * 180 / Math.PI, 'degrees');
 
                     // Update rotation ring to show current rotation
-                    this.gizmoRotationRing.rotation.z = this.initialRingRotationZ + angle;
+                    // Invert angle for ring because its local Z axis is inverted relative to world Y due to X rotation
+                    this.gizmoRotationRing.rotation.z = this.initialRingRotationZ - angle;
 
                     // Apply rotation to ALL selected objects
                     this.selectedObjects.forEach(obj => {
@@ -684,7 +686,7 @@ export class InteractionManager {
     deleteSelected() {
         const uuids = [];
         const objectsToRemove = Array.from(this.selectedObjects);
-        
+
         objectsToRemove.forEach(obj => {
             // Find the immediate parent group (closest parent)
             let immediateParentGroup = null;
@@ -695,12 +697,12 @@ export class InteractionManager {
             if (immediateParentGroup) {
                 // This is a child of a group - remove it completely from the scene
                 console.log('Deleting individual brick from group:', obj.name);
-                
+
                 uuids.push(obj.uuid);
-                
+
                 // Remove from group (don't add back to scene)
                 immediateParentGroup.remove(obj);
-                
+
                 // Check if group is now empty and should be removed
                 if (immediateParentGroup.children.length === 0) {
                     console.log('Group is now empty, removing group:', immediateParentGroup.name);
@@ -788,13 +790,13 @@ export class InteractionManager {
         if (this.selectedObjects.size < 2) return;
 
         const objectsToGroup = Array.from(this.selectedObjects);
-        
+
         // Check if all objects are at the same hierarchical level (same parent)
         let commonParent = null;
 
         for (const obj of objectsToGroup) {
             const objParent = obj.parent;
-            
+
             if (commonParent === null) {
                 commonParent = objParent;
             } else if (objParent !== commonParent) {
@@ -873,30 +875,30 @@ export class InteractionManager {
     // Helper method to remove groups with only one child (recursively checks nested groups)
     cleanupSingleChildGroups() {
         let groupsRemoved = [];
-        
+
         // Recursive helper to check and ungroup single-child groups
         const checkAndUngroupRecursive = (parent) => {
             // Check all children of this parent
             for (let i = parent.children.length - 1; i >= 0; i--) {
                 const child = parent.children[i];
-                
+
                 // First, recursively check this child's children
                 if (child.isGroup) {
                     checkAndUngroupRecursive(child);
                 }
-                
+
                 // Now check if this child is a group with only one child
                 if (child.isGroup && child.children.length === 1) {
                     console.log('Found group with single child, ungrouping:', child.name);
-                    
+
                     const grandchild = child.children[0];
-                    
+
                     // Move grandchild to parent
                     parent.attach(grandchild);
-                    
+
                     // Remove the single-child group from parent
                     parent.remove(child);
-                    
+
                     // If grandchild was in placedBricks, keep it; if group was in placedBricks, remove it
                     if (this.placedBricks.includes(child)) {
                         this.placedBricks = this.placedBricks.filter(b => b !== child);
@@ -904,18 +906,18 @@ export class InteractionManager {
                             this.placedBricks.push(grandchild);
                         }
                     }
-                    
+
                     // Notify about group removal
                     if (this.onBrickRemoved) this.onBrickRemoved(child.uuid);
-                    
+
                     groupsRemoved.push(child.uuid);
                 }
             }
         };
-        
+
         // Check all top-level placed bricks
         checkAndUngroupRecursive(this.scene);
-        
+
         return groupsRemoved;
     }
 
@@ -1120,97 +1122,191 @@ export class InteractionManager {
     }
 
     // Find valid placement position considering overlaps and stacking
-// In InteractionManager.js
+    // In InteractionManager.js
 
-findValidPlacementPosition(brick) {
-    const brickBox = new THREE.Box3().setFromObject(brick);
-    
-    // Slight epsilon to avoid 'friction' with neighbors
-    const epsilon = 0.05; 
-    const brickMinX = brickBox.min.x + epsilon;
-    const brickMaxX = brickBox.max.x - epsilon;
-    const brickMinZ = brickBox.min.z + epsilon;
-    const brickMaxZ = brickBox.max.z - epsilon;
+    findValidPlacementPosition(brick) {
+        // Helper: Recursively get all mesh children from a brick/group
+        const getMeshes = (obj) => {
+            let meshes = [];
+            if (obj.isMesh) {
+                meshes.push(obj);
+            } else if (obj.isGroup) {
+                obj.children.forEach(child => {
+                    meshes = meshes.concat(getMeshes(child));
+                });
+            }
+            return meshes;
+        };
 
-    let finalY = 0; // The lowest valid stacking Y position (default is ground)
+        // Get all meshes that constitute the object being placed
+        let draggedMeshes = getMeshes(brick);
 
-    // Helper: Recursively get all mesh children from a brick/group
-    const getMeshes = (obj) => {
-        let meshes = [];
-        if (obj.isMesh) {
-            meshes.push(obj);
-        } else if (obj.isGroup) {
-            obj.children.forEach(child => {
-                meshes = meshes.concat(getMeshes(child));
+        // Create a Set of dragged mesh UUIDs for fast exclusion
+        const draggedMeshIDs = new Set(draggedMeshes.map(m => m.uuid));
+
+        let requiredGroupY = -Infinity; // Start with no constraint
+        let constrained = false;
+
+        // Flatten the placed bricks list into a list of actual physical meshes
+        // EXCLUDING any meshes that are part of the dragged object (to handle nested groups)
+        const allPlacedMeshes = [];
+        this.placedBricks.forEach(pb => {
+            // Skip the brick itself if it's already in the placed list
+            if (pb === brick) return;
+
+            // Get all meshes from this placed brick
+            const meshes = getMeshes(pb);
+
+            // Add only those that are NOT part of the dragged object
+            meshes.forEach(m => {
+                if (!draggedMeshIDs.has(m.uuid)) {
+                    allPlacedMeshes.push(m);
+                }
             });
-        }
-        return meshes;
-    };
+        });
 
-    // --- NEW LOGIC: Calculate the minimum Y-offset for the current object (brick/group) ---
-    // If 'brick' is a Group, its position (origin) might not be at its lowest point.
-    const objectWorldBox = new THREE.Box3().setFromObject(brick);
-    const minObjectY = objectWorldBox.min.y; // Lowest Y value of the brick/group in world space
-    
-    // The amount the object needs to be lifted so its lowest point is at finalY (the target surface).
-    // This value is 0 if the object's lowest point is already at its current position.
-    const yOffset = brick.position.y - minObjectY;
+        // We also need to check against the ground!
+        // The ground is essentially a constraint at Y=0.
+        // For every part of the dragged object, its Y world position must be >= 0.
+        // Thus, the group position must be such that (groupPos.y + partOffset.y) >= 0.
+        // => groupPos.y >= -partOffset.y
 
-    // The required stacking height is now relative to the object's lowest point.
-    let requiredY = 0 + yOffset; // Start with ground level (0) + offset
-    // ------------------------------------------------------------------------------------
+        // Let's iterate through all parts of our dragged group/brick
+        for (const part of draggedMeshes) {
+            // Get the part's world bounding box relative to the group's current position
+            // But we want to simulate this:
+            // The group is at some (X, Z) and we are looking for Y.
+            // part.position is relative to group.
+            // We need part's World(X, Z) and its relative Y to the group.
 
+            // Since 'brick' (the group) is at its current position, we can use its current world matrix
+            // BUT we only care about X and Z fixed.
 
-    // Flatten the placed bricks list into a list of actual physical meshes
-    const allMeshes = [];
-    this.placedBricks.forEach(pb => {
-        if (pb === brick) return;
-        allMeshes.push(...getMeshes(pb));
-    });
+            // To simplify: Let's calculate the part's offset from the group origin
+            const partWorldPos = new THREE.Vector3();
+            part.getWorldPosition(partWorldPos);
+            // Note: brick.position gives the group's origin.
+            // partWorldPos.y - brick.position.y is the vertical offset.
 
-    // Check against every physical mesh in the scene
-    for (const mesh of allMeshes) {
-        // Get the world bounding box of this specific mesh
-        const meshBox = new THREE.Box3().setFromObject(mesh);
+            // Get part's bounding box in world space (current)
+            const partBox = new THREE.Box3().setFromObject(part);
 
-        // Strict X/Z Overlap Check
-        const overlapX = (brickMaxX > meshBox.min.x && brickMinX < meshBox.max.x);
-        const overlapZ = (brickMaxZ > meshBox.min.z && brickMinZ < meshBox.max.z);
+            // We want to find the lowest Y for the *Group Origin* such that this part is valid.
 
-        if (overlapX && overlapZ) {
-            // We found a brick directly below us.
-            
-            // Get World Position Y of the mesh below
-            const worldPos = new THREE.Vector3();
-            mesh.getWorldPosition(worldPos);
+            // 1. Ground Constraint
+            // The bottom of this part must be >= 0.
+            // partBottom_World = GroupY + (partBox.min.y - brick.position.y)
+            // Let partBottomOffset = partBox.min.y - brick.position.y
+            // GroupY + partBottomOffset >= 0
+            // GroupY >= -partBottomOffset
 
-            // Determine if it is a Plate or Brick based on geometry height
-            const height = meshBox.max.y - meshBox.min.y;
-            
-            // Define Standard LEGO Unit Heights
-            let gridStep = 0.96; // Default to Brick
-            if (height < 0.6) {
-                gridStep = 0.32; // It is a Plate
+            const partBottomOffset = partBox.min.y - brick.position.y;
+            const groundConstraintY = -partBottomOffset;
+
+            if (groundConstraintY > requiredGroupY) {
+                requiredGroupY = groundConstraintY;
+                constrained = true;
             }
 
-            // Calculate the valid stacking Y position
-            const stackY = worldPos.y + gridStep;
+            // 2. Stacking Constraint against all other placed meshes
 
-            if (stackY > requiredY) {
-                requiredY = stackY;
+            // Slight epsilon for X/Z to allow touching without overlap
+            const epsilon = 0.05;
+            const partMinX = partBox.min.x + epsilon;
+            const partMaxX = partBox.max.x - epsilon;
+            const partMinZ = partBox.min.z + epsilon;
+            const partMaxZ = partBox.max.z - epsilon;
+
+            for (const otherMesh of allPlacedMeshes) {
+                const otherBox = new THREE.Box3().setFromObject(otherMesh);
+
+                // IGNORE objects unless we are essentially "on top" of them.
+                // To prevent "jumping" when sliding sideways or moving downwards through hollow objects,
+                // we only stack if the part is already at (or above) the stacking surface.
+
+                // Allow a small overlap (tolerance) to account for studs or slight misalignment.
+                // If we penetrate deeper than this tolerance, we assume the user intends to clip/pass through
+                // (or that the object should not be supported by this specific mesh).
+                const stackTolerance = (this.studHeight || 0.16) * 1.5;
+
+                if (partBox.min.y < otherBox.max.y - stackTolerance) {
+                    continue;
+                }
+
+                // Strict X/Z Overlap Check between this part and the other mesh
+                const overlapX = (partMaxX > otherBox.min.x && partMinX < otherBox.max.x);
+                const overlapZ = (partMaxZ > otherBox.min.z && partMinZ < otherBox.max.z);
+
+                if (overlapX && overlapZ) {
+                    // Overlap detected!
+                    // This part must be stacked on top of otherMesh.
+
+                    // We stack on top of the physical bounds of the other mesh.
+                    // Standard stacking behavior: sit on top.
+                    // We assume the other mesh is a solid object we are cleaning.
+
+                    // Note: In LEGO logic, we might want to interlock.
+                    // To strictly fix the "jumping" bug, we just need to ensure we don't collide with things *not under us*.
+                    // But for things *under us*, we must stack.
+
+                    // Since specific stud logic is complex and might depend on geometry we don't fully parse here,
+                    // we will stick to AABB stacking on the specific mesh.
+                    // This allows "arch" behavior because the gap in the arch won't have a mesh to collide with.
+
+                    // Optimization: Subtract stud height if we want to sink in?
+                    // The previous logic was: const stackY = worldPos.y + gridStep;
+                    // Let's use the bounding box top.
+
+                    // If we assume standard bricks, we can sink 0.16 (stud height)?
+                    // But let's be safe and stack ON TOP first. If it looks floating, we tune it.
+                    // Actually, the previous code had `snapStudsToBrick` separately?
+                    // No, `findValidPlacementPosition` returns the final Y.
+
+                    // Let's check `studHeight` property.
+                    const studH = this.studHeight || 0.16;
+
+                    // Stack Y for the part's bottom
+                    const validPartBottomY = otherBox.max.y - studH;
+
+                    // GroupY >= validPartBottomY - partBottomOffset
+                    const stackingConstraintY = validPartBottomY - partBottomOffset;
+
+                    if (stackingConstraintY > requiredGroupY) {
+                        requiredGroupY = stackingConstraintY;
+                        constrained = true;
+                    }
+                }
             }
         }
+
+        const result = brick.position.clone();
+
+        // "Breakable Snap" Logic:
+        // 1. If we are clearly ABOVE the required height (or at it), we use the Max (standard stacking).
+        // 2. If we are BELOW the required height (Intersection), we check if we should "Snap Up" or "Allow Intersection".
+
+        // Define a tiny distance where we FORCE snap (Magnetism).
+        // This ensures if you are practically on top, you snap perfectly.
+        const magneticDist = 0.05;
+
+        // If 'requiredGroupY' is 0 (Ground/No Collision), we always allow going down to 0.
+        // If 'requiredGroupY' > 0, it means we hit an object.
+
+        if (brick.position.y >= requiredGroupY - magneticDist) {
+            // We are above or very close to surface -> Hard Snap/Stack.
+            result.y = Math.max(brick.position.y, requiredGroupY);
+        } else {
+            // We are colliding (intersecting) but "Pushing Through".
+            // We allow the intersection visually! 
+            // This prevents the "Trap" where 'Math.max' forces us back up, preventing us from ever reaching the "Ignore" threshold.
+            // Result: The brick will look like it's clipping into the object.
+            // If the user keeps dragging down, eventually they will cross the 'stackTolerance' (in the loop above),
+            // causing the Object to be IGNORED, 'requiredGroupY' will drop to 0, and the brick will fall free.
+            result.y = brick.position.y;
+        }
+
+        return result;
     }
-
-    const result = brick.position.clone();
-    
-    // We use Math.max() to ensure:
-    // 1. If brick.position.y < requiredY (user tried to clip/sink below ground), it snaps UP to requiredY.
-    // 2. If brick.position.y > requiredY (user lifted the brick), it stays at brick.position.y.
-    result.y = Math.max(brick.position.y, requiredY);
-
-    return result;
-}
     // Find a non-overlapping position at the same Y level
     findNonOverlappingPosition(brick, targetY) {
         const originalPos = brick.position.clone();
@@ -1238,20 +1334,20 @@ findValidPlacementPosition(brick) {
                 const candidateX = originalPos.x + xOffset * this.studSpacing;
                 const candidateZ = originalPos.z + zOffset * this.studSpacing;
 
-                candidates.push({x: candidateX, z: candidateZ});
+                candidates.push({ x: candidateX, z: candidateZ });
             }
         }
 
         // Also try immediate neighbors (more thoroughly)
         const immediateNeighbors = [
-            {x: originalPos.x + this.studSpacing, z: originalPos.z},
-            {x: originalPos.x - this.studSpacing, z: originalPos.z},
-            {x: originalPos.x, z: originalPos.z + this.studSpacing},
-            {x: originalPos.x, z: originalPos.z - this.studSpacing},
-            {x: originalPos.x + this.studSpacing, z: originalPos.z + this.studSpacing},
-            {x: originalPos.x + this.studSpacing, z: originalPos.z - this.studSpacing},
-            {x: originalPos.x - this.studSpacing, z: originalPos.z + this.studSpacing},
-            {x: originalPos.x - this.studSpacing, z: originalPos.z - this.studSpacing}
+            { x: originalPos.x + this.studSpacing, z: originalPos.z },
+            { x: originalPos.x - this.studSpacing, z: originalPos.z },
+            { x: originalPos.x, z: originalPos.z + this.studSpacing },
+            { x: originalPos.x, z: originalPos.z - this.studSpacing },
+            { x: originalPos.x + this.studSpacing, z: originalPos.z + this.studSpacing },
+            { x: originalPos.x + this.studSpacing, z: originalPos.z - this.studSpacing },
+            { x: originalPos.x - this.studSpacing, z: originalPos.z + this.studSpacing },
+            { x: originalPos.x - this.studSpacing, z: originalPos.z - this.studSpacing }
         ];
 
         // Add immediate neighbors to the beginning of candidates to try them first
@@ -1345,22 +1441,22 @@ findValidPlacementPosition(brick) {
     // Create 4 circular arrows for rotation gizmo (each covering 90 degrees)
     createDoubleCircularArrows(radius, color) {
         const group = new THREE.Group();
-        
+
         const arrowRadius = radius;
         const tubeRadius = 0.12;
         const arrowHeadLength = 0.5;
         const arrowHeadRadius = 0.25;
         const segmentsPerArrow = 16;
-        
+
         // Create 4 segments, each covering 90 degrees with bidirectional arrows
         const angleStep = Math.PI / 2; // 90 degrees
         const halfAngleStep = angleStep / 2; // 45 degrees
-        
+
         for (let i = 0; i < 4; i++) {
             const segmentStart = i * angleStep;
             const segmentMid = segmentStart + halfAngleStep;
             const segmentEnd = (i + 1) * angleStep;
-            
+
             // First half: forward arrow (start to mid)
             const forwardArrow = this.createSingleCircularArrow(
                 arrowRadius,
@@ -1374,7 +1470,7 @@ findValidPlacementPosition(brick) {
                 true // forward direction
             );
             group.add(forwardArrow);
-            
+
             // Second half: backward arrow (mid to end)
             const backwardArrow = this.createSingleCircularArrow(
                 arrowRadius,
@@ -1389,19 +1485,19 @@ findValidPlacementPosition(brick) {
             );
             group.add(backwardArrow);
         }
-        
+
         return group;
     }
 
     // Create a single curved arrow segment
     createSingleCircularArrow(radius, tubeRadius, color, startAngle, endAngle, arrowHeadLength, arrowHeadRadius, segments, forwardDirection = true) {
         const group = new THREE.Group();
-        
+
         // Reduce tube angle to leave space for arrow heads (no overlap)
         const arrowHeadAngleSpace = 0.08; // Smaller angle space reserved for arrow head
         let tubeStartAngle = startAngle;
         let tubeEndAngle = endAngle;
-        
+
         if (forwardDirection) {
             // Arrow head at the end, so shorten tube at the end
             tubeEndAngle = endAngle - arrowHeadAngleSpace;
@@ -1409,7 +1505,7 @@ findValidPlacementPosition(brick) {
             // Arrow head at the start, so shorten tube at the start
             tubeStartAngle = startAngle + arrowHeadAngleSpace;
         }
-        
+
         // Create the curved tube (torus segment) in XY plane (like the original torus)
         const points = [];
         for (let i = 0; i <= segments; i++) {
@@ -1418,13 +1514,13 @@ findValidPlacementPosition(brick) {
             const y = Math.sin(angle) * radius;
             points.push(new THREE.Vector3(x, y, 0));
         }
-        
+
         const curve = new THREE.CatmullRomCurve3(points);
         const tubeGeometry = new THREE.TubeGeometry(curve, segments, tubeRadius, 8, false);
         const tubeMaterial = new THREE.MeshBasicMaterial({ color: color });
         const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
         group.add(tube);
-        
+
         // Create arrow head at the appropriate end
         let headAngle;
         if (forwardDirection) {
@@ -1434,10 +1530,10 @@ findValidPlacementPosition(brick) {
             // Arrow head at the start
             headAngle = startAngle + 0.1;
         }
-        
+
         const headX = Math.cos(headAngle) * radius;
         const headY = Math.sin(headAngle) * radius;
-        
+
         // Direction vector for arrow head orientation
         let direction;
         if (forwardDirection) {
@@ -1451,22 +1547,22 @@ findValidPlacementPosition(brick) {
             const prevY = Math.sin(prevAngle) * radius;
             direction = new THREE.Vector3(prevX - headX, prevY - headY, 0).normalize();
         }
-        
+
         // Create cone for arrow head
         const coneGeometry = new THREE.ConeGeometry(arrowHeadRadius, arrowHeadLength, 16);
         const coneMaterial = new THREE.MeshBasicMaterial({ color: color });
         const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-        
+
         // Position the cone at the end of the arrow
         cone.position.set(headX, headY, 0);
-        
+
         // Rotate cone to point in the direction of motion
         const quaternion = new THREE.Quaternion();
         quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
         cone.quaternion.multiplyQuaternions(quaternion, cone.quaternion);
-        
+
         group.add(cone);
-        
+
         return group;
     }
 
@@ -1478,7 +1574,7 @@ findValidPlacementPosition(brick) {
 
         // Track hovered axis for glow effect
         this.hoveredGizmoAxis = null;
-        
+
         // Store labels for scaling
         this.gizmoLabels = {};
 
