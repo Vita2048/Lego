@@ -35,6 +35,7 @@ export class InteractionManager {
         this.dragStartPosition = new THREE.Vector3();
         this.draggedObject = null;
         this.dragGhost = null;
+        this.gizmoDragOccurred = false; // Flag to prevent click after gizmo drag
 
         // Transform gizmo
         this.gizmo = null;
@@ -188,6 +189,12 @@ export class InteractionManager {
     }
 
     onClick(event) {
+        // Prevent selection if we just finished a gizmo drag
+        if (this.gizmoDragOccurred) {
+            this.gizmoDragOccurred = false;
+            return;
+        }
+
         if (this.mode === 'place') {
             if (!this.ghostBrick || !this.ghostBrick.visible) return;
 
@@ -488,6 +495,9 @@ export class InteractionManager {
 
     onMouseUp(event) {
         if (this.mode === 'gizmo-drag') {
+            // Mark that a gizmo drag just occurred to prevent click selection
+            this.gizmoDragOccurred = true;
+
             // Because onMouseMove now handles the heavy lifting of collision and stacking,
             // we simply need to ensure the gizmo is updated and state is reset.
             // The position is already valid.
