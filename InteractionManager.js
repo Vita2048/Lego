@@ -201,31 +201,41 @@ export class InteractionManager {
         const scaleMultiplier = Math.max(1.0, requiredReach / minArrowLength);
         
         // Apply scaling to arrows
-        const scaledArrowLength = minArrowLength * scaleMultiplier;
-        const scaledHeadLength = 0.6 * scaleMultiplier;
-        const scaledShaftRadius = 0.08 * scaleMultiplier;
-        const scaledHeadRadius = 0.2 * scaleMultiplier;
-        
-        // Update arrow dimensions
         this.gizmo.traverse((child) => {
             if (child.name === 'gizmo-x' || child.name === 'gizmo-y' || child.name === 'gizmo-z') {
                 // Scale the arrow group
-                const baseScale = 1.0;
                 child.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
             }
         });
         
         // Update rotation ring radius
-        const scaledRotationRingRadius = minRotationRingRadius * scaleMultiplier;
         if (this.gizmoRotationRing) {
             this.gizmoRotationRing.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
         }
         
         // Update center handle size
         if (this.gizmoCenterHandle) {
-            const baseRadius = 0.4;
-            const scaledCenterRadius = baseRadius * scaleMultiplier;
             this.gizmoCenterHandle.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+        }
+        
+        // Update label positions and sizes
+        if (this.gizmoLabels) {
+            const labelDistance = 4.5 * scaleMultiplier;
+            
+            if (this.gizmoLabels.x) {
+                this.gizmoLabels.x.position.set(labelDistance, 0, 0);
+                this.gizmoLabels.x.scale.set(scaleMultiplier, scaleMultiplier, 1);
+            }
+            
+            if (this.gizmoLabels.y) {
+                this.gizmoLabels.y.position.set(0, labelDistance, 0);
+                this.gizmoLabels.y.scale.set(scaleMultiplier, scaleMultiplier, 1);
+            }
+            
+            if (this.gizmoLabels.z) {
+                this.gizmoLabels.z.position.set(0, 0, labelDistance);
+                this.gizmoLabels.z.scale.set(scaleMultiplier, scaleMultiplier, 1);
+            }
         }
     }
 
@@ -1468,6 +1478,9 @@ findValidPlacementPosition(brick) {
 
         // Track hovered axis for glow effect
         this.hoveredGizmoAxis = null;
+        
+        // Store labels for scaling
+        this.gizmoLabels = {};
 
         // Arrow dimensions - make them much longer and thicker
         const arrowLength = 4.0;
@@ -1535,7 +1548,10 @@ findValidPlacementPosition(brick) {
         // X label
         const xLabel = createTextSprite('X', '#ff0000');
         xLabel.position.set(4.5, 0, 0);
+        xLabel.userData.basePosition = new THREE.Vector3(4.5, 0, 0);
+        xLabel.userData.axis = 'x';
         this.gizmo.add(xLabel);
+        this.gizmoLabels.x = xLabel;
 
         // Y axis - Green
         const yArrow = createArrow(new THREE.Vector3(0, 1, 0), 0x00ff00, 'gizmo-y', 'y');
@@ -1545,7 +1561,10 @@ findValidPlacementPosition(brick) {
         // Y label
         const yLabel = createTextSprite('Y', '#00ff00');
         yLabel.position.set(0, 4.5, 0);
+        yLabel.userData.basePosition = new THREE.Vector3(0, 4.5, 0);
+        yLabel.userData.axis = 'y';
         this.gizmo.add(yLabel);
+        this.gizmoLabels.y = yLabel;
 
         // Z axis - Blue
         const zArrow = createArrow(new THREE.Vector3(0, 0, 1), 0x0000ff, 'gizmo-z', 'z');
@@ -1555,7 +1574,10 @@ findValidPlacementPosition(brick) {
         // Z label
         const zLabel = createTextSprite('Z', '#0000ff');
         zLabel.position.set(0, 0, 4.5);
+        zLabel.userData.basePosition = new THREE.Vector3(0, 0, 4.5);
+        zLabel.userData.axis = 'z';
         this.gizmo.add(zLabel);
+        this.gizmoLabels.z = zLabel;
 
         // Center handle - White sphere (larger)
         const centerGeometry = new THREE.SphereGeometry(0.4, 16, 16);
@@ -1681,11 +1703,15 @@ findValidPlacementPosition(brick) {
         if (intersects.length > 0) {
             // Find the axis from the parent hierarchy
             let obj = intersects[0].object;
-            while (obj && !obj.userData.axis) {
+            let depth = 0;
+            while (obj && !obj.userData.axis && depth < 5) {
                 obj = obj.parent;
+                depth++;
             }
             if (obj && obj.userData.axis) {
-                return obj.userData.axis;
+                const axis = obj.userData.axis;
+                console.log('Gizmo intersection detected - Axis:', axis, 'Object name:', obj.name);
+                return axis;
             }
         }
 
