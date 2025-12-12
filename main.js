@@ -478,6 +478,24 @@ function formatBrickName(name) {
     return name;
 }
 
+// Helper function to check if a tree item is visible (parent is not collapsed)
+function isTreeItemVisible(treeItemElement) {
+    let current = treeItemElement.parentElement;
+    
+    while (current && current !== placedBricksList) {
+        // Check if current is a tree-children container
+        if (current.classList.contains('tree-children')) {
+            // Check if it's expanded
+            if (!current.classList.contains('expanded')) {
+                return false; // Parent is collapsed
+            }
+        }
+        current = current.parentElement;
+    }
+    
+    return true; // All ancestors are expanded
+}
+
 
 function createBrickTreeItem(brick) {
     const container = document.createElement('div');
@@ -545,8 +563,15 @@ function createBrickTreeItem(brick) {
     content.addEventListener('click', (e) => {
         e.stopPropagation();
 
+        // Check if this item is visible in the tree (not inside a collapsed group)
+        const treeItem = content.closest('.tree-item');
+        if (!isTreeItemVisible(treeItem)) {
+            console.log('Cannot select item inside collapsed group');
+            return;
+        }
+
         if (e.shiftKey && lastSelectedUuid) {
-            // Shift+Click: Range Selection
+            // Shift+Click: Range Selection - only select visible items
             const allItems = Array.from(document.querySelectorAll('.tree-item-content'));
             const lastIdx = allItems.findIndex(el => {
                 const item = el.closest('.tree-item');
@@ -563,7 +588,11 @@ function createBrickTreeItem(brick) {
                 const rangeItems = allItems.slice(start, end + 1);
                 const uuids = rangeItems.map(el => {
                     const item = el.closest('.tree-item');
-                    return item ? item.dataset.uuid : null;
+                    // Only include visible items
+                    if (item && isTreeItemVisible(item)) {
+                        return item.dataset.uuid;
+                    }
+                    return null;
                 }).filter(Boolean);
 
                 interactionManager.selectObjectsByUuids(uuids);
@@ -630,6 +659,11 @@ interactionManager.onBrickAdded = (brick) => {
 interactionManager.onBrickRemoved = (uuid) => {
     // Re-render entire list
     renderBrickList();
+    
+    // Trigger selection changed to update button states
+    if (interactionManager.onSelectionChanged) {
+        interactionManager.onSelectionChanged(Array.from(interactionManager.selectedObjects).map(o => o.uuid));
+    }
 };
 
 interactionManager.onSelectionChanged = (selectedUuids) => {
@@ -640,8 +674,15 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     const uuids = Array.isArray(selectedUuids) ? selectedUuids : (selectedUuids ? [selectedUuids] : []);
     const selectedCount = uuids.length;
     let anyGroupSelected = false;
+    let allAtSameLevel = true;
+    let commonParent = null;
+    let commonParentName = 'unknown';
 
-    uuids.forEach(uuid => {
+    console.log('=== Selection Changed ===');
+    console.log('Selected UUIDs:', uuids);
+    console.log('Selected count:', selectedCount);
+
+    uuids.forEach((uuid, index) => {
         const item = document.querySelector(`.tree-item[data-uuid="${uuid}"] .tree-item-content`);
         if (item) {
             item.classList.add('selected');
@@ -653,11 +694,37 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
             if (uuids.length === 1) lastSelectedUuid = uuid;
         }
 
-        const obj = interactionManager.placedBricks.find(b => b.uuid === uuid);
-        if (obj && obj.name === 'Group') {
-            anyGroupSelected = true;
+        const obj = interactionManager.findBrickByUuid(uuid);
+        
+        let objParentName = 'NOT FOUND';
+        let objParent = null;
+        
+        if (!obj) {
+            console.log(`[${index}] UUID ${uuid}: OBJECT NOT FOUND`);
+        } else {
+            objParent = obj.parent;
+            objParentName = objParent ? (objParent.name || 'unnamed parent') : 'NO PARENT (is root)';
+            console.log(`[${index}] ${obj.name} (${uuid}) - Parent: ${objParentName}, isGroup: ${obj.isGroup}`);
+            
+            if (obj.isGroup) {
+                anyGroupSelected = true;
+            }
+
+            // Check if all selected objects have the same parent (same hierarchical level)
+            if (index === 0) {
+                commonParent = objParent;
+                commonParentName = objParentName;
+            } else {
+                if (objParent !== commonParent) {
+                    allAtSameLevel = false;
+                    console.log(`  ⚠️ Parent mismatch! Expected: ${commonParentName}, Got: ${objParentName}`);
+                }
+            }
         }
     });
+
+    console.log('All at same level:', allAtSameLevel);
+    console.log('Common parent:', commonParentName);
 
     // Sync currentMode with selection
     if (selectedCount > 0) {
@@ -667,7 +734,7 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     // Handle color button highlighting
     if (selectedCount === 1) {
         // Single brick selected - highlight its color
-        const selectedBrick = interactionManager.placedBricks.find(b => b.uuid === uuids[0]);
+        const selectedBrick = interactionManager.findBrickByUuid(uuids[0]);
         if (selectedBrick) {
             const colorName = getColorNameFromBrick(selectedBrick);
             highlightColorButton(colorName);
@@ -681,7 +748,12 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     // For multiple selection, keep current highlight or clear?
 
     // Update button states
-    if (groupBtn) groupBtn.disabled = selectedCount < 2;
+    // Group button: enabled only if 2+ items selected AND all at same hierarchical level
+    if (groupBtn) {
+        const shouldEnable = selectedCount >= 2 && allAtSameLevel;
+        console.log('Group button: enabled=' + shouldEnable + ' (count=' + selectedCount + ', sameLvl=' + allAtSameLevel + ')');
+        groupBtn.disabled = !shouldEnable;
+    }
     if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
     updateModeUI();
 };

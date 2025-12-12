@@ -61,24 +61,39 @@ export class InteractionManager {
 
     // Helper to find object recursively
     findBrickByUuid(uuid) {
-        // First check top level
-        for (const brick of this.placedBricks) {
-            if (brick.uuid === uuid) return brick;
-            // Check children if group
-            if (brick.isGroup && brick.children && brick.children.length > 0) {
-                const found = brick.getObjectByProperty('uuid', uuid);
-                if (found) return found;
+        // Recursive helper function
+        const searchInObject = (obj) => {
+            if (obj.uuid === uuid) return obj;
+            
+            // If this is a group, search its children
+            if (obj.isGroup && obj.children && obj.children.length > 0) {
+                for (const child of obj.children) {
+                    const found = searchInObject(child);
+                    if (found) return found;
+                }
             }
+            
+            return null;
+        };
+
+        // Search in all placed bricks
+        for (const brick of this.placedBricks) {
+            const found = searchInObject(brick);
+            if (found) return found;
         }
+        
         return null;
     }
 
     // Select object by UUID (for UI list)
     selectObjectByUuid(uuid, multi = false) {
         const object = this.findBrickByUuid(uuid);
+        console.log('selectObjectByUuid:', uuid, 'found:', !!object, object ? object.name : 'N/A');
         if (object) {
             this.setMode('select');
             this.selectObject(object, multi);
+        } else {
+            console.warn('Could not find object with UUID:', uuid);
         }
     }
 
@@ -269,46 +284,39 @@ export class InteractionManager {
             if (intersects.length > 0) {
                 // Find the actual intersected object in our hierarchy
                 let hitBrick = intersects[0].object;
-                
+
                 console.log('Clicked on object:', hitBrick.name, 'Type:', hitBrick.type, 'UUID:', hitBrick.uuid);
 
-                // Use the same logic as findBrickByUuid - search through placedBricks for objects that contain this hit object
-                let foundObject = null;
-                
-                // First check if the hit object itself is in placedBricks
-                if (this.placedBricks.includes(hitBrick)) {
-                    foundObject = hitBrick;
-                    console.log('Direct hit on placed brick:', foundObject.name);
+                // Determine the object to select
+                let foundObject = hitBrick;
+
+                // If the hit object is inside a group, select the immediate parent group
+                if (hitBrick.parent && hitBrick.parent.isGroup && hitBrick.parent !== this.scene) {
+                    foundObject = hitBrick.parent;
+                    console.log('Selecting immediate parent group:', foundObject.name);
+                }
+
+                // Check if this foundObject is selectable (in placedBricks hierarchy)
+                let isSelectable = false;
+                if (this.placedBricks.includes(foundObject)) {
+                    isSelectable = true;
+                    console.log('Direct selectable object:', foundObject.name);
                 } else {
-                    // Search through all placedBricks to find one that contains this object
+                    // Check if it's in the hierarchy of a placed brick
                     for (const brick of this.placedBricks) {
                         if (brick.isGroup && brick.children && brick.children.length > 0) {
-                            // Check if the hit object is in this group's hierarchy
-                            const found = brick.getObjectByProperty('uuid', hitBrick.uuid);
+                            const found = brick.getObjectByProperty('uuid', foundObject.uuid);
                             if (found) {
-                                foundObject = brick; // Select the containing brick
-                                console.log('Found object in group, selecting containing brick:', brick.name);
+                                isSelectable = true;
+                                console.log('Found in hierarchy of:', brick.name);
                                 break;
                             }
-                        }
-                    }
-                    
-                    // If still not found, try walking up the hierarchy to find a placed brick
-                    if (!foundObject) {
-                        let current = hitBrick.parent;
-                        while (current && current !== this.scene) {
-                            if (this.placedBricks.includes(current)) {
-                                foundObject = current;
-                                console.log('Found parent placed brick:', foundObject.name);
-                                break;
-                            }
-                            current = current.parent;
                         }
                     }
                 }
 
-                // If we found something to select, select it
-                if (foundObject) {
+                // If we found something selectable, select it
+                if (isSelectable) {
                     const multi = event.ctrlKey || event.metaKey;
                     if (multi) {
                         if (this.selectedObjects.has(foundObject)) {
@@ -654,6 +662,14 @@ export class InteractionManager {
             const uniqueUuids = [...new Set(uuids)];
             uniqueUuids.forEach(uuid => this.onBrickRemoved(uuid));
         }
+
+        // Clean up groups with single children
+        this.cleanupSingleChildGroups();
+
+        // Trigger selection changed callback to update UI
+        if (this.onSelectionChanged) {
+            this.onSelectionChanged([]);
+        }
     }
 
     duplicateSelected() {
@@ -704,37 +720,63 @@ export class InteractionManager {
     groupSelected() {
         if (this.selectedObjects.size < 2) return;
 
+        const objectsToGroup = Array.from(this.selectedObjects);
+        
+        // Check if all objects are at the same hierarchical level (same parent)
+        let commonParent = null;
+
+        for (const obj of objectsToGroup) {
+            const objParent = obj.parent;
+            
+            if (commonParent === null) {
+                commonParent = objParent;
+            } else if (objParent !== commonParent) {
+                // Objects are at different hierarchical levels - should not happen
+                // because button should be disabled in this case
+                console.warn('Cannot group objects at different hierarchical levels');
+                return;
+            }
+        }
+
         const group = new THREE.Group();
         group.name = "Group";
 
-        // 1. Calculate center
+        // Use the common parent as target
+        const targetParent = commonParent || this.scene;
+
+        // Calculate center in world space
         const center = new THREE.Vector3();
         const box = new THREE.Box3();
-        this.selectedObjects.forEach(obj => box.expandByObject(obj));
+        objectsToGroup.forEach(obj => {
+            obj.updateMatrixWorld(true);
+            box.expandByObject(obj);
+        });
         box.getCenter(center);
 
         group.position.copy(center);
-        this.scene.add(group);
+        targetParent.add(group);
+        group.updateMatrixWorld(true);
 
-        // 2. Attach objects to group (preserves world transform)
-        const objectsToGroup = Array.from(this.selectedObjects);
+        // Attach objects to group
         objectsToGroup.forEach(obj => {
-            this.scene.remove(obj); // Detach from scene logic handled by attach? 
-            // THREE.Object3D.attach removes from parent automatically.
             group.attach(obj);
 
-            // Remove from placedBricks list
-            this.placedBricks = this.placedBricks.filter(b => b !== obj);
+            // Remove from placedBricks list only if they were directly in placedBricks
+            if (this.placedBricks.includes(obj)) {
+                this.placedBricks = this.placedBricks.filter(b => b !== obj);
+            }
 
             // Notify UI about removal (visual only)
             if (this.onBrickRemoved) this.onBrickRemoved(obj.uuid);
         });
 
-        // 3. Add group to placedBricks
-        this.placedBricks.push(group);
-        if (this.onBrickAdded) this.onBrickAdded(group);
+        // Add group to placedBricks only if it's added directly to the scene
+        if (targetParent === this.scene) {
+            this.placedBricks.push(group);
+            if (this.onBrickAdded) this.onBrickAdded(group);
+        }
 
-        // 4. Select the new group
+        // Select the new group
         this.selectObject(group, false);
     }
 
@@ -743,23 +785,108 @@ export class InteractionManager {
         const group = this.selectedObjects.values().next().value;
         if (!group.isGroup) return;
 
+        // Recursively ungroup groups that end up with only one child
+        this.ungroupRecursively(group);
+
+        // Select the final children after all ungrouping is done
+        this.deselectAll();
+        // Find the children of the original group (they may have been moved)
+        const finalChildren = [];
+        if (group.parent) {
+            // Find children that were originally in the group
+            group.parent.children.forEach(child => {
+                if (child !== group) { // group is already removed
+                    finalChildren.push(child);
+                }
+            });
+        }
+        finalChildren.forEach(child => this.selectObject(child, true));
+    }
+
+    // Helper method to remove groups with only one child (recursively checks nested groups)
+    cleanupSingleChildGroups() {
+        let groupsRemoved = [];
+        
+        // Recursive helper to check and ungroup single-child groups
+        const checkAndUngroupRecursive = (parent) => {
+            // Check all children of this parent
+            for (let i = parent.children.length - 1; i >= 0; i--) {
+                const child = parent.children[i];
+                
+                // First, recursively check this child's children
+                if (child.isGroup) {
+                    checkAndUngroupRecursive(child);
+                }
+                
+                // Now check if this child is a group with only one child
+                if (child.isGroup && child.children.length === 1) {
+                    console.log('Found group with single child, ungrouping:', child.name);
+                    
+                    const grandchild = child.children[0];
+                    
+                    // Move grandchild to parent
+                    parent.attach(grandchild);
+                    
+                    // Remove the single-child group from parent
+                    parent.remove(child);
+                    
+                    // If grandchild was in placedBricks, keep it; if group was in placedBricks, remove it
+                    if (this.placedBricks.includes(child)) {
+                        this.placedBricks = this.placedBricks.filter(b => b !== child);
+                        if (grandchild.isMesh || grandchild.isGroup) {
+                            this.placedBricks.push(grandchild);
+                        }
+                    }
+                    
+                    // Notify about group removal
+                    if (this.onBrickRemoved) this.onBrickRemoved(child.uuid);
+                    
+                    groupsRemoved.push(child.uuid);
+                }
+            }
+        };
+        
+        // Check all top-level placed bricks
+        checkAndUngroupRecursive(this.scene);
+        
+        return groupsRemoved;
+    }
+
+    // Helper method to recursively ungroup groups with only one child
+    ungroupRecursively(group) {
         const children = [...group.children]; // snapshot
 
-        // 1. Move children back to scene
+        // Determine if this is a top-level group (directly in scene)
+        const isTopLevelGroup = group.parent === this.scene;
+
+        // 1. Move children back to their appropriate parent
         children.forEach(child => {
-            this.scene.attach(child);
-            this.placedBricks.push(child);
-            if (this.onBrickAdded) this.onBrickAdded(child);
+            if (group.parent) {
+                group.parent.attach(child);
+            } else {
+                this.scene.attach(child);
+            }
+            // Only add to placedBricks if ungrouping a top-level group
+            if (isTopLevelGroup) {
+                this.placedBricks.push(child);
+                if (this.onBrickAdded) this.onBrickAdded(child);
+            }
         });
 
-        // 2. Remove group
-        this.scene.remove(group);
+        // 2. Remove group from its parent
+        if (group.parent) {
+            group.parent.remove(group);
+        } else {
+            this.scene.remove(group);
+        }
         this.placedBricks = this.placedBricks.filter(b => b !== group);
         if (this.onBrickRemoved) this.onBrickRemoved(group.uuid);
 
-        // 3. Select children
-        this.deselectAll();
-        children.forEach(child => this.selectObject(child, true));
+        // 3. Check if parent now has only one child and should be ungrouped
+        if (group.parent && group.parent.isGroup && group.parent.children.length === 1) {
+            // Parent has only one child, ungroup it recursively
+            this.ungroupRecursively(group.parent);
+        }
     }
 
     // Configure stud grid settings from baseplate
