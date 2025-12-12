@@ -286,8 +286,8 @@ export class InteractionManager {
                             // Check if the hit object is in this group's hierarchy
                             const found = brick.getObjectByProperty('uuid', hitBrick.uuid);
                             if (found) {
-                                foundObject = hitBrick; // Select the individual brick, not the group
-                                console.log('Found individual brick in group:', foundObject.name, 'Group:', brick.name);
+                                foundObject = brick; // Select the containing brick
+                                console.log('Found object in group, selecting containing brick:', brick.name);
                                 break;
                             }
                         }
