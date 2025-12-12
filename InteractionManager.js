@@ -1127,6 +1127,134 @@ findValidPlacementPosition(brick) {
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
+    // Create 4 circular arrows for rotation gizmo (each covering 90 degrees)
+    createDoubleCircularArrows(radius, color) {
+        const group = new THREE.Group();
+        
+        const arrowRadius = radius;
+        const tubeRadius = 0.12;
+        const arrowHeadLength = 0.5;
+        const arrowHeadRadius = 0.25;
+        const segmentsPerArrow = 16;
+        
+        // Create 4 segments, each covering 90 degrees with bidirectional arrows
+        const angleStep = Math.PI / 2; // 90 degrees
+        const halfAngleStep = angleStep / 2; // 45 degrees
+        
+        for (let i = 0; i < 4; i++) {
+            const segmentStart = i * angleStep;
+            const segmentMid = segmentStart + halfAngleStep;
+            const segmentEnd = (i + 1) * angleStep;
+            
+            // First half: forward arrow (start to mid)
+            const forwardArrow = this.createSingleCircularArrow(
+                arrowRadius,
+                tubeRadius,
+                color,
+                segmentStart,
+                segmentMid,
+                arrowHeadLength,
+                arrowHeadRadius,
+                segmentsPerArrow,
+                true // forward direction
+            );
+            group.add(forwardArrow);
+            
+            // Second half: backward arrow (mid to end)
+            const backwardArrow = this.createSingleCircularArrow(
+                arrowRadius,
+                tubeRadius,
+                color,
+                segmentMid,
+                segmentEnd,
+                arrowHeadLength,
+                arrowHeadRadius,
+                segmentsPerArrow,
+                false // reverse direction
+            );
+            group.add(backwardArrow);
+        }
+        
+        return group;
+    }
+
+    // Create a single curved arrow segment
+    createSingleCircularArrow(radius, tubeRadius, color, startAngle, endAngle, arrowHeadLength, arrowHeadRadius, segments, forwardDirection = true) {
+        const group = new THREE.Group();
+        
+        // Reduce tube angle to leave space for arrow heads (no overlap)
+        const arrowHeadAngleSpace = 0.08; // Smaller angle space reserved for arrow head
+        let tubeStartAngle = startAngle;
+        let tubeEndAngle = endAngle;
+        
+        if (forwardDirection) {
+            // Arrow head at the end, so shorten tube at the end
+            tubeEndAngle = endAngle - arrowHeadAngleSpace;
+        } else {
+            // Arrow head at the start, so shorten tube at the start
+            tubeStartAngle = startAngle + arrowHeadAngleSpace;
+        }
+        
+        // Create the curved tube (torus segment) in XY plane (like the original torus)
+        const points = [];
+        for (let i = 0; i <= segments; i++) {
+            const angle = tubeStartAngle + (tubeEndAngle - tubeStartAngle) * (i / segments);
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            points.push(new THREE.Vector3(x, y, 0));
+        }
+        
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tubeGeometry = new THREE.TubeGeometry(curve, segments, tubeRadius, 8, false);
+        const tubeMaterial = new THREE.MeshBasicMaterial({ color: color });
+        const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+        group.add(tube);
+        
+        // Create arrow head at the appropriate end
+        let headAngle;
+        if (forwardDirection) {
+            // Arrow head at the end
+            headAngle = endAngle - 0.1;
+        } else {
+            // Arrow head at the start
+            headAngle = startAngle + 0.1;
+        }
+        
+        const headX = Math.cos(headAngle) * radius;
+        const headY = Math.sin(headAngle) * radius;
+        
+        // Direction vector for arrow head orientation
+        let direction;
+        if (forwardDirection) {
+            const nextAngle = headAngle + 0.1;
+            const nextX = Math.cos(nextAngle) * radius;
+            const nextY = Math.sin(nextAngle) * radius;
+            direction = new THREE.Vector3(nextX - headX, nextY - headY, 0).normalize();
+        } else {
+            const prevAngle = headAngle - 0.1;
+            const prevX = Math.cos(prevAngle) * radius;
+            const prevY = Math.sin(prevAngle) * radius;
+            direction = new THREE.Vector3(prevX - headX, prevY - headY, 0).normalize();
+        }
+        
+        // Create cone for arrow head
+        const coneGeometry = new THREE.ConeGeometry(arrowHeadRadius, arrowHeadLength, 16);
+        const coneMaterial = new THREE.MeshBasicMaterial({ color: color });
+        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+        
+        // Position the cone at the end of the arrow
+        cone.position.set(headX, headY, 0);
+        
+        // Rotate cone to point in the direction of motion
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        cone.quaternion.multiplyQuaternions(quaternion, cone.quaternion);
+        
+        group.add(cone);
+        
+        return group;
+    }
+
     createGizmo() {
         // Create a group to hold all gizmo elements
         this.gizmo = new THREE.Group();
@@ -1233,10 +1361,8 @@ findValidPlacementPosition(brick) {
         this.gizmoCenterHandle.userData.originalColor = 0xffffff;
         this.gizmo.add(this.gizmoCenterHandle);
 
-        // Rotation ring - Orange torus around Y axis, parallel to canvas (XZ plane)
-        const ringGeometry = new THREE.TorusGeometry(3.0, 0.1, 8, 32);
-        const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffa500 });
-        this.gizmoRotationRing = new THREE.Mesh(ringGeometry, ringMaterial);
+        // Rotation ring - Create 2 circular arrows around Y axis, parallel to canvas (XZ plane)
+        this.gizmoRotationRing = this.createDoubleCircularArrows(3.0, 0xffa500);
         this.gizmoRotationRing.name = 'gizmo-rotate';
         this.gizmoRotationRing.userData.axis = 'rotate';
         this.gizmoRotationRing.userData.originalColor = 0xffa500;
@@ -1267,10 +1393,12 @@ findValidPlacementPosition(brick) {
                     // this.gizmoCenterHandle.scale.set(1.3, 1.3, 1.3);
                 }
             } else if (axis === 'rotate') {
-                if (this.gizmoRotationRing && this.gizmoRotationRing.material) {
-                    this.gizmoRotationRing.material.color.setHex(glowColor);
-                    // TEMPORARILY DISABLED SCALING
-                    // this.gizmoRotationRing.scale.set(1.2, 1.2, 1.2);
+                if (this.gizmoRotationRing && this.gizmoRotationRing.children) {
+                    this.gizmoRotationRing.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            child.material.color.setHex(glowColor);
+                        }
+                    });
                 }
             } else if (this.gizmoArrows[axis]) {
                 const arrow = this.gizmoArrows[axis];
@@ -1300,7 +1428,11 @@ findValidPlacementPosition(brick) {
 
             // Reset rotation ring
             if (this.gizmoRotationRing) {
-                this.gizmoRotationRing.material.color.setHex(0xffa500);
+                this.gizmoRotationRing.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        child.material.color.setHex(0xffa500);
+                    }
+                });
                 this.gizmoRotationRing.scale.set(1, 1, 1);
             }
 
