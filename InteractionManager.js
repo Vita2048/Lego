@@ -48,6 +48,7 @@ export class InteractionManager {
         this.verticalDragFactor = 1.0; // Sensitivity for vertical drag
         this.objectDragStarts = new Map(); // Map uuid -> original position
         this.objectRotationStarts = new Map(); // Map uuid -> original rotation
+        this.initialRingRotationZ = 0; // Initial rotation of the rotation ring
 
         // Callbacks for UI
         this.onBrickAdded = null;
@@ -352,6 +353,11 @@ export class InteractionManager {
                     this.objectRotationStarts.set(obj.uuid, obj.rotation.clone());
                 });
 
+                // Store initial rotation ring rotation for visual feedback
+                if (gizmoAxis === 'rotate') {
+                    this.initialRingRotationZ = this.gizmoRotationRing.rotation.z;
+                }
+
                 // Use the ground plane for all axes to allow proper delta calculation
                 this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -416,6 +422,9 @@ export class InteractionManager {
                     const angle = Math.atan2(currentVector.z, currentVector.x) - Math.atan2(startVector.z, startVector.x);
 
                     console.log('Rotation angle:', angle * 180 / Math.PI, 'degrees');
+
+                    // Update rotation ring to show current rotation
+                    this.gizmoRotationRing.rotation.z = this.initialRingRotationZ + angle;
 
                     // Apply rotation to ALL selected objects
                     this.selectedObjects.forEach(obj => {
@@ -507,6 +516,8 @@ export class InteractionManager {
                     // Snap rotation to 90-degree increments
                     const snappedRotationY = Math.round(obj.rotation.y / (Math.PI / 2)) * (Math.PI / 2);
                     obj.rotation.y = snappedRotationY;
+                    // Update rotation ring to match snapped rotation
+                    this.gizmoRotationRing.rotation.z = snappedRotationY;
                 } else {
                     // One final sanity check to ensure grid alignment
                     const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
