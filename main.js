@@ -77,32 +77,6 @@ for (const [name, hex] of Object.entries(colorMap)) {
     reverseColorMap[hex.toLowerCase()] = name;
 }
 
-// CSS filters to tint white images to specific colors (keeping transparent background)
-const colorFilters = {
-    'White': '',
-    'Red': 'invert(16%) sepia(99%) saturate(7400%) hue-rotate(0deg) brightness(95%) contrast(106%)',
-    'Blue': 'invert(8%) sepia(99%) saturate(7374%) hue-rotate(246deg) brightness(88%) contrast(134%)',
-    'Green': 'invert(34%) sepia(98%) saturate(704%) hue-rotate(87deg) brightness(91%) contrast(135%)',
-    'Yellow': 'invert(81%) sepia(96%) saturate(1500%) hue-rotate(2deg) brightness(102%) contrast(102%)',
-    'Black': 'invert(100%)',
-    'Gray': 'invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
-    'Grey': 'invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
-    'Orange': 'invert(42%) sepia(93%) saturate(1350%) hue-rotate(2deg) brightness(103%) contrast(104%)',
-    'Purple': 'invert(9%) sepia(99%) saturate(7374%) hue-rotate(258deg) brightness(91%) contrast(133%)',
-    'Pink': 'invert(27%) sepia(51%) saturate(2878%) hue-rotate(346deg) brightness(104%) contrast(97%)',
-    'Brown': 'invert(9%) sepia(61%) saturate(1350%) hue-rotate(12deg) brightness(91%) contrast(88%)',
-    'Tan': 'invert(49%) sepia(29%) saturate(500%) hue-rotate(12deg) brightness(96%) contrast(93%)',
-    'LightGray': 'invert(56%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
-    'DarkGray': 'invert(24%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
-    'Cyan': 'invert(48%) sepia(93%) saturate(500%) hue-rotate(123deg) brightness(102%) contrast(96%)',
-    'Magenta': 'invert(12%) sepia(99%) saturate(7374%) hue-rotate(314deg) brightness(91%) contrast(133%)',
-    'Lime': 'invert(48%) sepia(96%) saturate(704%) hue-rotate(69deg) brightness(102%) contrast(135%)',
-    'Navy': 'invert(7%) sepia(99%) saturate(7374%) hue-rotate(248deg) brightness(85%) contrast(134%)',
-    'Teal': 'invert(25%) sepia(93%) saturate(500%) hue-rotate(123deg) brightness(91%) contrast(96%)',
-    'Olive': 'invert(21%) sepia(98%) saturate(704%) hue-rotate(52deg) brightness(91%) contrast(135%)',
-    'Maroon': 'invert(9%) sepia(99%) saturate(7400%) hue-rotate(0deg) brightness(85%) contrast(106%)'
-};
-
 // Function to get color name from brick material
 function getColorNameFromBrick(brick) {
     if (brick && brick.material && brick.material.color) {
@@ -559,37 +533,84 @@ function createBrickTreeItem(brick) {
     } else {
         // Get the brick's color
         const colorName = getColorNameFromBrick(brick);
+        const colorHex = colorMap[colorName] || '#ffffff';
 
-        // Ensure transparent background for thumbnail
-        thumbnail.style.backgroundColor = 'transparent';
+        // Create canvas for tinted thumbnail
+        const canvas = document.createElement('canvas');
+        canvas.width = 24;
+        canvas.height = 24;
+        const ctx = canvas.getContext('2d');
 
-        // Use brick thumbnail image
-        const img = document.createElement('img');
         // Extract brick type and dimensions from name (e.g., "Brick_2_2" -> "Brick 2x2")
         const parts = brick.name.split('_');
+        let thumbnailPath = './lego_thumbnails/Brick 2x2.png'; // Default fallback
         if (parts.length >= 3) {
             const type = parts[0];
             const width = parts[1];
             const depth = parts[2];
-            const thumbnailPath = `./lego_thumbnails/${type} ${width}x${depth}.png`;
-            img.src = thumbnailPath;
-            img.onerror = () => {
-                // Fallback to generic brick icon
-                img.src = `./lego_thumbnails/Brick 2x2.png`;
+            thumbnailPath = `./lego_thumbnails/${type} ${width}x${depth}.png`;
+        }
+
+        // Load and tint the image
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = thumbnailPath;
+        img.onload = () => {
+            // Draw the original image
+            ctx.drawImage(img, 0, 0, 24, 24);
+            // Tint with the brick's color preserving shades
+            if (colorName !== 'White') {
+                const imageData = ctx.getImageData(0, 0, 24, 24);
+                const data = imageData.data;
+                // Parse the hex color
+                const rColor = parseInt(colorHex.slice(1, 3), 16);
+                const gColor = parseInt(colorHex.slice(3, 5), 16);
+                const bColor = parseInt(colorHex.slice(5, 7), 16);
+                for (let i = 0; i < data.length; i += 4) {
+                    if (data[i + 3] > 0) { // If not transparent
+                        // Calculate brightness from original (assuming grayscale)
+                        const brightness = (data[i] + data[i + 1] + data[i + 2]) / (3 * 255);
+                        // Tint by scaling the color
+                        data[i] = Math.round(rColor * brightness);
+                        data[i + 1] = Math.round(gColor * brightness);
+                        data[i + 2] = Math.round(bColor * brightness);
+                        // Alpha remains the same
+                    }
+                }
+                ctx.putImageData(imageData, 0, 0);
+            }
+        };
+        img.onerror = () => {
+            // Fallback to generic brick icon
+            const fallbackImg = new Image();
+            fallbackImg.crossOrigin = 'anonymous';
+            fallbackImg.src = './lego_thumbnails/Brick 2x2.png';
+            fallbackImg.onload = () => {
+                ctx.drawImage(fallbackImg, 0, 0, 24, 24);
+                if (colorName !== 'White') {
+                    const imageData = ctx.getImageData(0, 0, 24, 24);
+                    const data = imageData.data;
+                    // Parse the hex color
+                    const rColor = parseInt(colorHex.slice(1, 3), 16);
+                    const gColor = parseInt(colorHex.slice(3, 5), 16);
+                    const bColor = parseInt(colorHex.slice(5, 7), 16);
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (data[i + 3] > 0) { // If not transparent
+                            // Calculate brightness from original (assuming grayscale)
+                            const brightness = (data[i] + data[i + 1] + data[i + 2]) / (3 * 255);
+                            // Tint by scaling the color
+                            data[i] = Math.round(rColor * brightness);
+                            data[i + 1] = Math.round(gColor * brightness);
+                            data[i + 2] = Math.round(bColor * brightness);
+                            // Alpha remains the same
+                        }
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                }
             };
-        } else {
-            // Fallback for unknown format
-            img.src = `./lego_thumbnails/Brick 2x2.png`;
-        }
+        };
 
-        // Override CSS background and apply color filter
-        img.style.backgroundColor = 'transparent';
-        const filter = colorFilters[colorName] || '';
-        if (filter) {
-            img.style.filter = filter;
-        }
-
-        thumbnail.appendChild(img);
+        thumbnail.appendChild(canvas);
     }
 
     // Label
