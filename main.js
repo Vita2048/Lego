@@ -591,10 +591,15 @@ function createBrickTreeItem(brick) {
         // Extract brick type and dimensions from name (e.g., "Brick_2_2" -> "Brick 2x2")
         const parts = brick.name.split('_');
         let thumbnailPath = './lego_thumbnails/Brick 2x2.png'; // Default fallback
-        if (parts.length >= 3) {
+        if (parts.length >= 2) {
             const type = parts[0];
-            const width = parts[1];
-            const depth = parts[2];
+            let width = parts[1];
+            let depth = parts[2] || '2';
+            if (width && width.includes('x')) {
+                const sizeParts = width.split('x');
+                width = sizeParts[0];
+                depth = sizeParts[1] || '2';
+            }
             thumbnailPath = `./lego_thumbnails/${type} ${width}x${depth}.png`;
         }
 
