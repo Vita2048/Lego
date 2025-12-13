@@ -570,10 +570,17 @@ function createBrickTreeItem(brick) {
                     if (data[i + 3] > 0) { // If not transparent
                         // Calculate brightness from original (assuming grayscale)
                         const brightness = (data[i] + data[i + 1] + data[i + 2]) / (3 * 255);
-                        // Tint by scaling the color
-                        data[i] = Math.round(rColor * brightness);
-                        data[i + 1] = Math.round(gColor * brightness);
-                        data[i + 2] = Math.round(bColor * brightness);
+                        // Tint by scaling the color, special case for black to preserve 3D shades
+                        if (colorName === 'Black') {
+                            const gray = Math.round(255 * (1 - brightness));
+                            data[i] = gray;
+                            data[i + 1] = gray;
+                            data[i + 2] = gray;
+                        } else {
+                            data[i] = Math.round(rColor * brightness);
+                            data[i + 1] = Math.round(gColor * brightness);
+                            data[i + 2] = Math.round(bColor * brightness);
+                        }
                         // Alpha remains the same
                     }
                 }
@@ -598,10 +605,17 @@ function createBrickTreeItem(brick) {
                         if (data[i + 3] > 0) { // If not transparent
                             // Calculate brightness from original (assuming grayscale)
                             const brightness = (data[i] + data[i + 1] + data[i + 2]) / (3 * 255);
-                            // Tint by scaling the color
-                            data[i] = Math.round(rColor * brightness);
-                            data[i + 1] = Math.round(gColor * brightness);
-                            data[i + 2] = Math.round(bColor * brightness);
+                            // Tint by scaling the color, special case for black to preserve 3D shades
+                            if (colorName === 'Black') {
+                                const gray = Math.round(255 * (1 - brightness));
+                                data[i] = gray;
+                                data[i + 1] = gray;
+                                data[i + 2] = gray;
+                            } else {
+                                data[i] = Math.round(rColor * brightness);
+                                data[i + 1] = Math.round(gColor * brightness);
+                                data[i + 2] = Math.round(bColor * brightness);
+                            }
                             // Alpha remains the same
                         }
                     }
