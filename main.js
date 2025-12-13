@@ -215,12 +215,12 @@ function updateModeUI() {
     const selectedCount = interactionManager.selectedObjects.size;
     if (currentMode === 'select') {
         selectModeBtn.classList.add('active');
-        deleteBtn.disabled = false;
-        duplicateBtn.disabled = selectedCount === 0;
+        deleteBtn.classList.toggle('disabled', selectedCount === 0);
+        duplicateBtn.classList.toggle('disabled', selectedCount === 0);
     } else {
         selectModeBtn.classList.remove('active');
-        deleteBtn.disabled = true;
-        duplicateBtn.disabled = true;
+        deleteBtn.classList.add('disabled');
+        duplicateBtn.classList.add('disabled');
     }
 }
 
@@ -230,10 +230,13 @@ modesContainer.style.padding = '10px';
 modesContainer.style.borderBottom = '1px solid #333';
 modesContainer.style.marginBottom = '10px';
 
-const selectModeBtn = document.createElement('button');
-selectModeBtn.textContent = 'Select Mode (Esc)';
-selectModeBtn.style.padding = '5px 10px';
+const selectModeBtn = document.createElement('div');
+selectModeBtn.className = 'action-button';
+selectModeBtn.style.display = 'flex';
+selectModeBtn.style.flexDirection = 'column';
+selectModeBtn.style.alignItems = 'center';
 selectModeBtn.style.cursor = 'pointer';
+selectModeBtn.style.padding = '5px';
 selectModeBtn.onclick = () => {
     currentMode = 'select';
     interactionManager.setMode('select');
@@ -241,6 +244,20 @@ selectModeBtn.onclick = () => {
     document.querySelectorAll('.brick-item').forEach(el => el.classList.remove('selected'));
     updateModeUI();
 };
+
+const selectIcon = document.createElement('img');
+selectIcon.src = './icons/select.png';
+selectIcon.style.width = '34px';
+selectIcon.style.height = '34px';
+selectIcon.style.marginBottom = '2px';
+
+const selectLabel = document.createElement('div');
+selectLabel.textContent = 'Select';
+selectLabel.style.fontSize = '0.7rem';
+selectLabel.style.textAlign = 'center';
+
+selectModeBtn.appendChild(selectIcon);
+selectModeBtn.appendChild(selectLabel);
 
 // Actions section
 const actionsContainer = document.createElement('div');
@@ -250,25 +267,55 @@ actionsContainer.style.marginBottom = '10px';
 actionsContainer.style.display = 'flex';
 actionsContainer.style.gap = '10px';
 
-const deleteBtn = document.createElement('button');
-deleteBtn.textContent = 'Delete (Del)';
-deleteBtn.style.padding = '5px 10px';
+const deleteBtn = document.createElement('div');
+deleteBtn.className = 'action-button';
+deleteBtn.style.display = 'flex';
+deleteBtn.style.flexDirection = 'column';
+deleteBtn.style.alignItems = 'center';
 deleteBtn.style.cursor = 'pointer';
-deleteBtn.style.backgroundColor = '#ff4444';
-deleteBtn.style.color = 'white';
-deleteBtn.style.border = 'none';
-deleteBtn.style.borderRadius = '4px';
+deleteBtn.style.padding = '5px';
 deleteBtn.onclick = () => {
     interactionManager.deleteSelected();
 };
 
-const duplicateBtn = document.createElement('button');
-duplicateBtn.textContent = 'Duplicate';
-duplicateBtn.style.padding = '5px 10px';
+const deleteIcon = document.createElement('img');
+deleteIcon.src = './icons/delete.png';
+deleteIcon.style.width = '34px';
+deleteIcon.style.height = '34px';
+deleteIcon.style.marginBottom = '2px';
+
+const deleteLabel = document.createElement('div');
+deleteLabel.textContent = 'Delete';
+deleteLabel.style.fontSize = '0.7rem';
+deleteLabel.style.textAlign = 'center';
+
+deleteBtn.appendChild(deleteIcon);
+deleteBtn.appendChild(deleteLabel);
+
+const duplicateBtn = document.createElement('div');
+duplicateBtn.className = 'action-button';
+duplicateBtn.style.display = 'flex';
+duplicateBtn.style.flexDirection = 'column';
+duplicateBtn.style.alignItems = 'center';
 duplicateBtn.style.cursor = 'pointer';
+duplicateBtn.style.padding = '5px';
 duplicateBtn.onclick = () => {
     interactionManager.duplicateSelected();
 };
+
+const duplicateIcon = document.createElement('img');
+duplicateIcon.src = './icons/clone.png';
+duplicateIcon.style.width = '34px';
+duplicateIcon.style.height = '34px';
+duplicateIcon.style.marginBottom = '2px';
+
+const duplicateLabel = document.createElement('div');
+duplicateLabel.textContent = 'Duplicate';
+duplicateLabel.style.fontSize = '0.7rem';
+duplicateLabel.style.textAlign = 'center';
+
+duplicateBtn.appendChild(duplicateIcon);
+duplicateBtn.appendChild(duplicateLabel);
 
 modesContainer.appendChild(selectModeBtn);
 actionsContainer.appendChild(deleteBtn);
@@ -830,22 +877,36 @@ interactionManager.onSelectionChanged = (selectedUuids) => {
     if (groupBtn) {
         const shouldEnable = selectedCount >= 2 && allAtSameLevel;
         console.log('Group button: enabled=' + shouldEnable + ' (count=' + selectedCount + ', sameLvl=' + allAtSameLevel + ')');
-        groupBtn.disabled = !shouldEnable;
+        if (shouldEnable) {
+            groupBtn.classList.remove('disabled');
+        } else {
+            groupBtn.classList.add('disabled');
+        }
     }
-    if (ungroupBtn) ungroupBtn.disabled = !(selectedCount === 1 && anyGroupSelected);
+    if (ungroupBtn) {
+        if (selectedCount === 1 && anyGroupSelected) {
+            ungroupBtn.classList.remove('disabled');
+        } else {
+            ungroupBtn.classList.add('disabled');
+        }
+    }
     updateModeUI();
 };
 
 // Button Handlers
 if (groupBtn) {
     groupBtn.onclick = () => {
-        interactionManager.groupSelected();
+        if (!groupBtn.classList.contains('disabled')) {
+            interactionManager.groupSelected();
+        }
     };
 }
 
 if (ungroupBtn) {
     ungroupBtn.onclick = () => {
-        interactionManager.ungroupSelected();
+        if (!ungroupBtn.classList.contains('disabled')) {
+            interactionManager.ungroupSelected();
+        }
     };
 }
 

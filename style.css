@@ -378,3 +378,27 @@ button.active {
   border: 2px solid #747bff;
   color: white;
 }
+
+/* Action button styles */
+.action-button {
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.action-button:hover:not(.disabled) {
+  background-color: #333;
+}
+
+.action-button.active {
+  background-color: #535bf2;
+  box-shadow: 0 0 10px rgba(0, 102, 204, 0.8);
+}
+
+.action-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-button.disabled img {
+  filter: grayscale(100%) brightness(0.5);
+}
