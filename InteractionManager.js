@@ -528,36 +528,48 @@ export class InteractionManager {
 
                     // Apply delta to ALL selected objects
                     this.selectedObjects.forEach(obj => {
-                        const originalPos = this.objectDragStarts.get(obj.uuid);
-                        if (!originalPos) return;
+                        const originalLocalPos = this.objectDragStarts.get(obj.uuid);
+                        if (!originalLocalPos) return;
 
-                        const newPosition = originalPos.clone();
-
-                        if (this.activeGizmoAxis === 'x') {
-                            newPosition.x += delta.x;
-                        } else if (this.activeGizmoAxis === 'y') {
-                            newPosition.y += delta.y;
-                            // Snap Y to vertical grid (brick height - stud height)
-                            if (this.verticalGridSize > 0) {
-                                newPosition.y = Math.round(newPosition.y / this.verticalGridSize) * this.verticalGridSize;
-                            }
-                            // Clamp to ground (Y >= 0)
-                            if (newPosition.y < 0) newPosition.y = 0;
-                        } else if (this.activeGizmoAxis === 'z') {
-                            newPosition.z += delta.z;
-                        } else if (this.activeGizmoAxis === 'center') {
-                            newPosition.x += delta.x;
-                            newPosition.z += delta.z;
-                            newPosition.y = originalPos.y;
+                        // Convert original local position to world space for calculation
+                        const originalWorldPos = originalLocalPos.clone();
+                        if (obj.parent) {
+                            obj.parent.localToWorld(originalWorldPos);
                         }
 
-                        // Snap X and Z to stud grid
-                        const snapped = this.snapToStudGrid(newPosition.x, newPosition.z, obj);
-                        newPosition.x = snapped.x;
-                        newPosition.z = snapped.z;
+                        const newWorldPos = originalWorldPos.clone();
 
-                        // Apply the new approximate position first so we can check it
-                        obj.position.copy(newPosition);
+                        if (this.activeGizmoAxis === 'x') {
+                            newWorldPos.x += delta.x;
+                        } else if (this.activeGizmoAxis === 'y') {
+                            newWorldPos.y += delta.y;
+                            // Snap Y to vertical grid (brick height - stud height)
+                            if (this.verticalGridSize > 0) {
+                                newWorldPos.y = Math.round(newWorldPos.y / this.verticalGridSize) * this.verticalGridSize;
+                            }
+                            // Clamp to ground (Y >= 0)
+                            if (newWorldPos.y < 0) newWorldPos.y = 0;
+                        } else if (this.activeGizmoAxis === 'z') {
+                            newWorldPos.z += delta.z;
+                        } else if (this.activeGizmoAxis === 'center') {
+                            newWorldPos.x += delta.x;
+                            newWorldPos.z += delta.z;
+                            newWorldPos.y = originalWorldPos.y;
+                        }
+
+                        // Snap X and Z to stud grid (World Space)
+                        const snapped = this.snapToStudGrid(newWorldPos.x, newWorldPos.z, obj);
+                        newWorldPos.x = snapped.x;
+                        newWorldPos.z = snapped.z;
+
+                        // Convert back to local space
+                        const newLocalPos = newWorldPos.clone();
+                        if (obj.parent) {
+                            obj.parent.worldToLocal(newLocalPos);
+                        }
+
+                        // Apply the new position
+                        obj.position.copy(newLocalPos);
 
                         // Skip collision detection during drag to prevent jumping.
                         // Validation will be applied on mouse up.
@@ -596,10 +608,17 @@ export class InteractionManager {
                     // Update rotation ring to match snapped rotation
                     this.gizmoRotationRing.rotation.z = snappedRotationY;
                 } else {
-                    // One final sanity check to ensure grid alignment
-                    const snapped = this.snapToStudGrid(obj.position.x, obj.position.z, obj);
-                    obj.position.x = snapped.x;
-                    obj.position.z = snapped.z;
+                    // One final sanity check to ensure grid alignment (World Space)
+                    const worldPos = obj.position.clone();
+                    if (obj.parent) obj.parent.localToWorld(worldPos);
+
+                    const snapped = this.snapToStudGrid(worldPos.x, worldPos.z, obj);
+                    worldPos.x = snapped.x;
+                    worldPos.z = snapped.z;
+
+                    const snappedLocalPos = worldPos.clone();
+                    if (obj.parent) obj.parent.worldToLocal(snappedLocalPos);
+                    obj.position.copy(snappedLocalPos);
 
                     // Re-validate strictly one last time to ensure no slight drifts.
                     // NOTE: We only apply full Y-validation if the Y-axis was dragged
@@ -609,8 +628,16 @@ export class InteractionManager {
                         const validPos = this.findValidPlacementPosition(obj);
                         obj.position.copy(validPos);
                     } else {
-                        // For X/Z/Center drag, just ensure we don't sink below the ground (Y>=0)
-                        if (obj.position.y < 0) obj.position.y = 0;
+                        // For X/Z/Center drag, just ensure we don't sink below the ground (World Y>=0)
+                        const checkWorldPos = obj.position.clone();
+                        if (obj.parent) obj.parent.localToWorld(checkWorldPos);
+
+                        if (checkWorldPos.y < 0) {
+                            checkWorldPos.y = 0;
+                            const fixedLocalPos = checkWorldPos.clone();
+                            if (obj.parent) obj.parent.worldToLocal(fixedLocalPos);
+                            obj.position.copy(fixedLocalPos);
+                        }
                     }
                 }
 
