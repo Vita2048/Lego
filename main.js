@@ -77,6 +77,32 @@ for (const [name, hex] of Object.entries(colorMap)) {
     reverseColorMap[hex.toLowerCase()] = name;
 }
 
+// CSS filters to tint white images to specific colors (keeping transparent background)
+const colorFilters = {
+    'White': '',
+    'Red': 'invert(16%) sepia(99%) saturate(7400%) hue-rotate(0deg) brightness(95%) contrast(106%)',
+    'Blue': 'invert(8%) sepia(99%) saturate(7374%) hue-rotate(246deg) brightness(88%) contrast(134%)',
+    'Green': 'invert(34%) sepia(98%) saturate(704%) hue-rotate(87deg) brightness(91%) contrast(135%)',
+    'Yellow': 'invert(81%) sepia(96%) saturate(1500%) hue-rotate(2deg) brightness(102%) contrast(102%)',
+    'Black': 'invert(100%)',
+    'Gray': 'invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
+    'Grey': 'invert(40%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
+    'Orange': 'invert(42%) sepia(93%) saturate(1350%) hue-rotate(2deg) brightness(103%) contrast(104%)',
+    'Purple': 'invert(9%) sepia(99%) saturate(7374%) hue-rotate(258deg) brightness(91%) contrast(133%)',
+    'Pink': 'invert(27%) sepia(51%) saturate(2878%) hue-rotate(346deg) brightness(104%) contrast(97%)',
+    'Brown': 'invert(9%) sepia(61%) saturate(1350%) hue-rotate(12deg) brightness(91%) contrast(88%)',
+    'Tan': 'invert(49%) sepia(29%) saturate(500%) hue-rotate(12deg) brightness(96%) contrast(93%)',
+    'LightGray': 'invert(56%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
+    'DarkGray': 'invert(24%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(94%) contrast(89%)',
+    'Cyan': 'invert(48%) sepia(93%) saturate(500%) hue-rotate(123deg) brightness(102%) contrast(96%)',
+    'Magenta': 'invert(12%) sepia(99%) saturate(7374%) hue-rotate(314deg) brightness(91%) contrast(133%)',
+    'Lime': 'invert(48%) sepia(96%) saturate(704%) hue-rotate(69deg) brightness(102%) contrast(135%)',
+    'Navy': 'invert(7%) sepia(99%) saturate(7374%) hue-rotate(248deg) brightness(85%) contrast(134%)',
+    'Teal': 'invert(25%) sepia(93%) saturate(500%) hue-rotate(123deg) brightness(91%) contrast(96%)',
+    'Olive': 'invert(21%) sepia(98%) saturate(704%) hue-rotate(52deg) brightness(91%) contrast(135%)',
+    'Maroon': 'invert(9%) sepia(99%) saturate(7400%) hue-rotate(0deg) brightness(85%) contrast(106%)'
+};
+
 // Function to get color name from brick material
 function getColorNameFromBrick(brick) {
     if (brick && brick.material && brick.material.color) {
@@ -533,10 +559,9 @@ function createBrickTreeItem(brick) {
     } else {
         // Get the brick's color
         const colorName = getColorNameFromBrick(brick);
-        const colorHex = colorMap[colorName] || '#ffffff';
 
-        // Set background color for tinting
-        thumbnail.style.backgroundColor = colorHex;
+        // Ensure transparent background for thumbnail
+        thumbnail.style.backgroundColor = 'transparent';
 
         // Use brick thumbnail image
         const img = document.createElement('img');
@@ -556,8 +581,14 @@ function createBrickTreeItem(brick) {
             // Fallback for unknown format
             img.src = `./lego_thumbnails/Brick 2x2.png`;
         }
-        // Apply mix-blend-mode to tint the white brick with the background color
-        img.style.mixBlendMode = 'multiply';
+
+        // Override CSS background and apply color filter
+        img.style.backgroundColor = 'transparent';
+        const filter = colorFilters[colorName] || '';
+        if (filter) {
+            img.style.filter = filter;
+        }
+
         thumbnail.appendChild(img);
     }
 
