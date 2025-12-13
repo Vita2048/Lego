@@ -145,6 +145,9 @@ function changeSelectedBricksColor(newColor) {
 
     // Highlight the new color button
     highlightColorButton(newColor);
+
+    // Re-render the brick list to update thumbnail colors
+    renderBrickList();
 }
 
 // Use fixed basic colors instead of extracting from GLTF
@@ -520,7 +523,7 @@ function createBrickTreeItem(brick) {
     // Thumbnail for groups or bricks
     const thumbnail = document.createElement('div');
     thumbnail.className = 'tree-thumbnail';
-    
+
     if (brick.name === 'Group') {
         // Folder icon for groups
         const folderIcon = document.createElement('div');
@@ -528,6 +531,13 @@ function createBrickTreeItem(brick) {
         folderIcon.textContent = '📁';
         thumbnail.appendChild(folderIcon);
     } else {
+        // Get the brick's color
+        const colorName = getColorNameFromBrick(brick);
+        const colorHex = colorMap[colorName] || '#ffffff';
+
+        // Set background color for tinting
+        thumbnail.style.backgroundColor = colorHex;
+
         // Use brick thumbnail image
         const img = document.createElement('img');
         // Extract brick type and dimensions from name (e.g., "Brick_2_2" -> "Brick 2x2")
@@ -546,6 +556,8 @@ function createBrickTreeItem(brick) {
             // Fallback for unknown format
             img.src = `./lego_thumbnails/Brick 2x2.png`;
         }
+        // Apply mix-blend-mode to tint the white brick with the background color
+        img.style.mixBlendMode = 'multiply';
         thumbnail.appendChild(img);
     }
 
