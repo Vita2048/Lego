@@ -495,7 +495,7 @@ export class InteractionManager {
 
                     // Calculate angle difference
                     // Calculate angle difference
-                    const angle = Math.atan2(currentVector.z, currentVector.x) - Math.atan2(startVector.z, startVector.x);
+                    const angle = Math.atan2(startVector.z, startVector.x) - Math.atan2(currentVector.z, currentVector.x);
 
                     console.log('Rotation angle:', angle * 180 / Math.PI, 'degrees');
 
