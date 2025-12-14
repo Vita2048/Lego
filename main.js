@@ -247,8 +247,8 @@ selectModeBtn.onclick = () => {
 
 const selectIcon = document.createElement('img');
 selectIcon.src = './icons/select.png';
-selectIcon.style.width = '34px';
-selectIcon.style.height = '34px';
+selectIcon.style.width = '48px';
+selectIcon.style.height = '48px';
 selectIcon.style.marginBottom = '2px';
 
 const selectLabel = document.createElement('div');
@@ -280,8 +280,8 @@ deleteBtn.onclick = () => {
 
 const deleteIcon = document.createElement('img');
 deleteIcon.src = './icons/delete.png';
-deleteIcon.style.width = '34px';
-deleteIcon.style.height = '34px';
+deleteIcon.style.width = '48px';
+deleteIcon.style.height = '48px';
 deleteIcon.style.marginBottom = '2px';
 
 const deleteLabel = document.createElement('div');
@@ -305,8 +305,8 @@ duplicateBtn.onclick = () => {
 
 const duplicateIcon = document.createElement('img');
 duplicateIcon.src = './icons/clone.png';
-duplicateIcon.style.width = '34px';
-duplicateIcon.style.height = '34px';
+duplicateIcon.style.width = '48px';
+duplicateIcon.style.height = '48px';
 duplicateIcon.style.marginBottom = '2px';
 
 const duplicateLabel = document.createElement('div');
