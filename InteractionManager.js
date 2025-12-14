@@ -312,9 +312,12 @@ export class InteractionManager {
 
                     // Check for volumetric overlaps and find best placement
                     const finalPosition = this.findValidPlacementPosition(newBrick);
-
+    
                     // Apply the final position
                     newBrick.position.copy(finalPosition);
+    
+                    // Update matrix world for accurate overlap checking
+                    newBrick.updateMatrixWorld();
 
                     this.scene.add(newBrick);
                     this.placedBricks.push(newBrick);
@@ -1079,6 +1082,19 @@ export class InteractionManager {
         return size.x > epsilon && size.y > epsilon && size.z > epsilon;
     }
 
+    // Check if a brick overlaps volumetrically with any placed bricks
+    checkForVolumetricOverlap(brick) {
+        const brickBox = new THREE.Box3().setFromObject(brick);
+        for (const placedBrick of this.placedBricks) {
+            if (placedBrick === brick) continue;
+            const placedBox = new THREE.Box3().setFromObject(placedBrick);
+            if (this.checkBoxOverlap(brickBox, placedBox)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Find the highest non-overlapping position for stacking
     findStackingPosition(brick, targetX, targetZ) {
         // Create box for the brick at target position
@@ -1262,20 +1278,7 @@ export class InteractionManager {
             for (const otherMesh of allPlacedMeshes) {
                 const otherBox = new THREE.Box3().setFromObject(otherMesh);
 
-                // IGNORE objects unless we are essentially "on top" of them.
-                // To prevent "jumping" when sliding sideways or moving downwards through hollow objects,
-                // we only stack if the part is already at (or above) the stacking surface.
-
-                // Allow a small overlap (tolerance) to account for studs or slight misalignment.
-                // If we penetrate deeper than this tolerance, we assume the user intends to clip/pass through
-                // (or that the object should not be supported by this specific mesh).
-                const stackTolerance = (this.studHeight || 0.16) * 1.5;
-
-                if (partBox.min.y < otherBox.max.y - stackTolerance) {
-                    continue;
-                }
-
-                // Strict X/Z Overlap Check between this part and the other mesh
+                // Check for X/Z overlap to stack on top
                 const overlapX = (partMaxX > otherBox.min.x && partMinX < otherBox.max.x);
                 const overlapZ = (partMaxZ > otherBox.min.z && partMinZ < otherBox.max.z);
 
@@ -1323,29 +1326,8 @@ export class InteractionManager {
 
         const result = brick.position.clone();
 
-        // "Breakable Snap" Logic:
-        // 1. If we are clearly ABOVE the required height (or at it), we use the Max (standard stacking).
-        // 2. If we are BELOW the required height (Intersection), we check if we should "Snap Up" or "Allow Intersection".
-
-        // Define a tiny distance where we FORCE snap (Magnetism).
-        // This ensures if you are practically on top, you snap perfectly.
-        const magneticDist = 0.05;
-
-        // If 'requiredGroupY' is 0 (Ground/No Collision), we always allow going down to 0.
-        // If 'requiredGroupY' > 0, it means we hit an object.
-
-        if (brick.position.y >= requiredGroupY - magneticDist) {
-            // We are above or very close to surface -> Hard Snap/Stack.
-            result.y = Math.max(brick.position.y, requiredGroupY);
-        } else {
-            // We are colliding (intersecting) but "Pushing Through".
-            // We allow the intersection visually! 
-            // This prevents the "Trap" where 'Math.max' forces us back up, preventing us from ever reaching the "Ignore" threshold.
-            // Result: The brick will look like it's clipping into the object.
-            // If the user keeps dragging down, eventually they will cross the 'stackTolerance' (in the loop above),
-            // causing the Object to be IGNORED, 'requiredGroupY' will drop to 0, and the brick will fall free.
-            result.y = brick.position.y;
-        }
+        // Always stack to prevent volumetric overlap
+        result.y = Math.max(brick.position.y, requiredGroupY);
 
         return result;
     }
