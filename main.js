@@ -987,17 +987,54 @@ function hasCanvasContent() {
     return interactionManager.placedBricks.length > 0;
 }
 
+// Custom Modal Functions
+function showCustomModal(title, message, onYes, onNo) {
+    const modal = document.getElementById('custom-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMessage = document.getElementById('modal-message');
+    const yesButton = document.getElementById('modal-yes');
+    const noButton = document.getElementById('modal-no');
+
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+
+    // Remove previous event listeners
+    const newYesButton = yesButton.cloneNode(true);
+    const newNoButton = noButton.cloneNode(true);
+    yesButton.parentNode.replaceChild(newYesButton, yesButton);
+    noButton.parentNode.replaceChild(newNoButton, noButton);
+
+    // Add new event listeners
+    newYesButton.addEventListener('click', () => {
+        modal.style.display = 'none';
+        if (onYes) onYes();
+    });
+
+    newNoButton.addEventListener('click', () => {
+        modal.style.display = 'none';
+        if (onNo) onNo();
+    });
+
+    modal.style.display = 'flex';
+}
+
 // Handle New File
 function handleNewFile() {
     if (hasCanvasContent()) {
-        const saveFirst = confirm('The canvas is not empty. Do you want to save your work first?');
-        if (saveFirst) {
-            handleSaveFile(() => {
+        showCustomModal(
+            'New File',
+            'The canvas is not empty. Do you want to save your work first?',
+            () => {
+                // Yes - save first
+                handleSaveFile(() => {
+                    clearCanvas();
+                });
+            },
+            () => {
+                // No - just clear
                 clearCanvas();
-            });
-        } else {
-            clearCanvas();
-        }
+            }
+        );
     } else {
         clearCanvas();
     }
