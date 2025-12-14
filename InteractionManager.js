@@ -312,10 +312,10 @@ export class InteractionManager {
 
                     // Check for volumetric overlaps and find best placement
                     const finalPosition = this.findValidPlacementPosition(newBrick);
-    
+
                     // Apply the final position
                     newBrick.position.copy(finalPosition);
-    
+
                     // Update matrix world for accurate overlap checking
                     newBrick.updateMatrixWorld();
 
@@ -366,13 +366,18 @@ export class InteractionManager {
 
                 console.log('Clicked on object:', hitBrick.name, 'Type:', hitBrick.type, 'UUID:', hitBrick.uuid);
 
-                // Determine the object to select
+                // Determine the object to select - walk up hierarchy to find the root placed brick
                 let foundObject = hitBrick;
 
-                // If the hit object is inside a group, select the immediate parent group
-                if (hitBrick.parent && hitBrick.parent.isGroup && hitBrick.parent !== this.scene) {
-                    foundObject = hitBrick.parent;
-                    console.log('Selecting immediate parent group:', foundObject.name);
+                // Walk up until we find an object that is in placedBricks or we hit the scene
+                let currentObj = hitBrick;
+                while (currentObj && currentObj !== this.scene) {
+                    if (this.placedBricks.includes(currentObj)) {
+                        foundObject = currentObj;
+                        console.log('Found root placed object:', foundObject.name);
+                        break;
+                    }
+                    currentObj = currentObj.parent;
                 }
 
                 // Check if this foundObject is selectable (in placedBricks hierarchy)
@@ -518,15 +523,19 @@ export class InteractionManager {
                     this.gizmoRotationRing.rotation.z = this.initialRingRotationZ - angle;
 
                     // Apply rotation to ALL selected objects
+                    const worldY = new THREE.Vector3(0, 1, 0);
                     this.selectedObjects.forEach(obj => {
                         const originalRotation = this.objectRotationStarts.get(obj.uuid);
                         if (!originalRotation) return;
 
-                        const newRotation = originalRotation.clone();
-                        newRotation.y = originalRotation.y + angle;
+                        // Reset to original rotation first
+                        obj.rotation.copy(originalRotation);
 
-                        obj.rotation.copy(newRotation);
-                        console.log('Object rotation:', obj.rotation.y * 180 / Math.PI, 'degrees');
+                        // Rotate around WORLD Y axis
+                        // We use +angle because the angle calculation matches the needed rotation
+                        obj.rotateOnWorldAxis(worldY, angle);
+
+                        console.log('Object rotation updated');
                     });
                 } else {
                     let delta = new THREE.Vector3();
@@ -865,6 +874,11 @@ export class InteractionManager {
             box.expandByObject(obj);
         });
         box.getCenter(center);
+
+        // If targetParent is not the scene, we must convert the world center to local space
+        if (targetParent !== this.scene) {
+            targetParent.worldToLocal(center);
+        }
 
         group.position.copy(center);
         targetParent.add(group);
