@@ -54,6 +54,13 @@ export class InteractionManager {
         this.onBrickAdded = null;
         this.onBrickRemoved = null;
         this.onSelectionChanged = null;
+        this.onRenderBrickList = null;
+        this.onUpdateUndoButton = null;
+
+        // Undo system
+        this.previousState = null;
+        this.hasActionToUndo = false;
+        this.previousSelectedUuids = null;
 
         this.initEvents();
         this.createGizmo();
@@ -288,6 +295,8 @@ export class InteractionManager {
             this.raycaster.ray.intersectPlane(groundPlane, intersectionPoint);
 
             if (intersectionPoint) {
+                this.saveState();
+
                 // Snap to stud grid
                 const snapped = this.snapToStudGrid(intersectionPoint.x, intersectionPoint.z, this.ghostBrick);
 
@@ -415,6 +424,8 @@ export class InteractionManager {
             // Check if clicking on gizmo
             const gizmoAxis = this.getGizmoIntersection();
             if (gizmoAxis) {
+                this.saveState();
+
                 // Start gizmo drag
                 this.mode = 'gizmo-drag';
                 this.activeGizmoAxis = gizmoAxis;
@@ -711,6 +722,7 @@ export class InteractionManager {
     }
 
     deleteSelected() {
+        this.saveState();
         const uuids = [];
         const objectsToRemove = Array.from(this.selectedObjects);
 
@@ -770,6 +782,7 @@ export class InteractionManager {
 
     duplicateSelected() {
         if (this.selectedObjects.size === 0) return;
+        this.saveState();
 
         const newObjects = [];
         let offsetIndex = 0;
@@ -815,6 +828,7 @@ export class InteractionManager {
 
     groupSelected() {
         if (this.selectedObjects.size < 2) return;
+        this.saveState();
 
         const objectsToGroup = Array.from(this.selectedObjects);
 
@@ -880,6 +894,7 @@ export class InteractionManager {
         if (this.selectedObjects.size !== 1) return;
         const group = this.selectedObjects.values().next().value;
         if (!group.isGroup) return;
+        this.saveState();
 
         // Recursively ungroup groups that end up with only one child
         this.ungroupRecursively(group);
@@ -1960,4 +1975,203 @@ export class InteractionManager {
             this.deleteSelected();
         }
     }
+
+    // Undo system methods
+    saveState() {
+        // Serialize current state to XML
+        this.previousState = this.serializeState();
+        // Store current selection for restoration after undo
+        this.previousSelectedUuids = Array.from(this.selectedObjects).map(o => o.uuid);
+        this.hasActionToUndo = true;
+        // Update UI
+        if (this.onUpdateUndoButton) this.onUpdateUndoButton();
+    }
+
+    serializeState() {
+        const bricks = this.placedBricks;
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        xml += '<lego-model>\n';
+        bricks.forEach(brick => {
+            xml += this.serializeBrick(brick);
+        });
+        xml += '</lego-model>\n';
+        return xml;
+    }
+
+    serializeBrick(brick) {
+        let xml = '';
+        if (brick.isGroup) {
+            xml += `  <group name="${brick.name}" uuid="${brick.uuid}">\n`;
+            xml += `    <position x="${brick.position.x}" y="${brick.position.y}" z="${brick.position.z}" />\n`;
+            xml += `    <rotation x="${brick.rotation.x}" y="${brick.rotation.y}" z="${brick.rotation.z}" />\n`;
+            xml += `    <scale x="${brick.scale.x}" y="${brick.scale.y}" z="${brick.scale.z}" />\n`;
+            brick.children.forEach(child => {
+                if (child.isMesh || child.isGroup) {
+                    xml += '    ' + this.serializeBrick(child).replace(/\n/g, '\n    ').trim() + '\n';
+                }
+            });
+            xml += '  </group>\n';
+        } else {
+            xml += `  <brick name="${brick.name}" uuid="${brick.uuid}">\n`;
+            xml += `    <position x="${brick.position.x}" y="${brick.position.y}" z="${brick.position.z}" />\n`;
+            xml += `    <rotation x="${brick.rotation.x}" y="${brick.rotation.y}" z="${brick.rotation.z}" />\n`;
+            xml += `    <scale x="${brick.scale.x}" y="${brick.scale.y}" z="${brick.scale.z}" />\n`;
+            xml += `    <color name="${this.getColorNameFromBrick(brick)}" />\n`;
+            xml += '  </brick>\n';
+        }
+        return xml;
+    }
+
+    getColorNameFromBrick(brick) {
+        if (brick && brick.material && brick.material.color) {
+            const hex = '#' + brick.material.color.getHexString();
+            // Use reverseColorMap if available, else default
+            return window.reverseColorMap ? window.reverseColorMap[hex.toLowerCase()] || 'White' : 'White';
+        }
+        return 'White';
+    }
+
+    restoreState() {
+        if (!this.previousState) return;
+
+        // Clear current canvas
+        this.clearCanvas();
+
+        // Deserialize from XML
+        this.deserializeState(this.previousState);
+
+        // Update UI
+        if (this.onRenderBrickList) this.onRenderBrickList();
+
+        // Restore selection if objects still exist
+        if (this.previousSelectedUuids && this.previousSelectedUuids.length > 0) {
+            const existingUuids = this.previousSelectedUuids.filter(uuid => this.findBrickByUuid(uuid));
+            if (existingUuids.length > 0) {
+                this.selectObjectsByUuids(existingUuids);
+            } else {
+                this.deselectAll();
+            }
+        } else {
+            this.deselectAll();
+        }
+
+        this.hasActionToUndo = false;
+        this.previousSelectedUuids = null;
+        if (this.onUpdateUndoButton) this.onUpdateUndoButton();
+    }
+
+    clearCanvas() {
+        // Remove all placed bricks from scene
+        this.placedBricks.forEach(brick => {
+            this.scene.remove(brick);
+        });
+        this.placedBricks = [];
+        this.deselectAll();
+    }
+
+    deserializeState(xmlContent) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+        const modelElement = xmlDoc.getElementsByTagName('lego-model')[0];
+        if (!modelElement) return;
+
+        const elements = modelElement.children;
+        for (let i = 0; i < elements.length; i++) {
+            const element = elements[i];
+            if (element.tagName === 'brick' || element.tagName === 'group') {
+                const brick = this.deserializeBrick(element);
+                if (brick) {
+                    this.scene.add(brick);
+                    brick.updateMatrixWorld(true);
+                    brick.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            child.material.userData.isRaycastable = true;
+                        }
+                    });
+                    this.placedBricks.push(brick);
+                }
+            }
+        }
+    }
+
+    deserializeBrick(element) {
+        const name = element.getAttribute('name');
+        const uuid = element.getAttribute('uuid');
+        const positionElement = element.getElementsByTagName('position')[0];
+        const rotationElement = element.getElementsByTagName('rotation')[0];
+        const scaleElement = element.getElementsByTagName('scale')[0];
+
+        if (!positionElement || !rotationElement || !scaleElement) return null;
+
+        const position = {
+            x: parseFloat(positionElement.getAttribute('x')),
+            y: parseFloat(positionElement.getAttribute('y')),
+            z: parseFloat(positionElement.getAttribute('z'))
+        };
+        const rotation = {
+            x: parseFloat(rotationElement.getAttribute('x')),
+            y: parseFloat(rotationElement.getAttribute('y')),
+            z: parseFloat(rotationElement.getAttribute('z'))
+        };
+        const scale = {
+            x: parseFloat(scaleElement.getAttribute('x')),
+            y: parseFloat(scaleElement.getAttribute('y')),
+            z: parseFloat(scaleElement.getAttribute('z'))
+        };
+
+        let brick;
+        if (element.tagName === 'group') {
+            brick = new THREE.Group();
+            brick.name = name;
+            brick.uuid = uuid;
+            const children = element.children;
+            for (let i = 0; i < children.length; i++) {
+                const childElement = children[i];
+                if (childElement.tagName === 'brick' || childElement.tagName === 'group') {
+                    const childBrick = this.deserializeBrick(childElement);
+                    if (childBrick) brick.add(childBrick);
+                }
+            }
+        } else {
+            brick = this.brickManager.getBrick(name);
+            if (!brick) return null;
+            brick.uuid = uuid;
+            const colorElement = element.getElementsByTagName('color')[0];
+            if (colorElement) {
+                const colorName = colorElement.getAttribute('name');
+                if (colorName && window.colorMap && window.colorMap[colorName]) {
+                    const hexColor = window.colorMap[colorName];
+                    brick.traverse((child) => {
+                        if (child.isMesh && child.material) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: hexColor,
+                                roughness: 0.3,
+                                metalness: 0.1,
+                                transparent: false,
+                                opacity: 1.0
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        brick.position.set(position.x, position.y, position.z);
+        brick.rotation.set(rotation.x, rotation.y, rotation.z);
+        brick.scale.set(scale.x, scale.y, scale.z);
+        brick.updateMatrixWorld(true);
+
+        if (brick.isGroup) {
+            brick.traverse((child) => {
+                if (child.isMesh) child.updateMatrixWorld(true);
+            });
+        }
+
+        return brick;
+    }
+
+    undoLastAction() {
+        this.restoreState();
+    }
+
 }

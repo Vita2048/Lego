@@ -42,6 +42,15 @@ scene.add(dirLight);
 const brickManager = new BrickManager(scene);
 const interactionManager = new InteractionManager(scene, camera, renderer.domElement, brickManager, controls);
 
+// Set undo button update callback
+interactionManager.onUpdateUndoButton = () => {
+    if (interactionManager.hasActionToUndo) {
+        undoBtn.classList.remove('disabled');
+    } else {
+        undoBtn.classList.add('disabled');
+    }
+};
+
 // UI Integration
 const brickMenu = document.getElementById('brick-menu');
 
@@ -76,6 +85,10 @@ const reverseColorMap = {};
 for (const [name, hex] of Object.entries(colorMap)) {
     reverseColorMap[hex.toLowerCase()] = name;
 }
+
+// Make color maps globally available
+window.colorMap = colorMap;
+window.reverseColorMap = reverseColorMap;
 
 // Function to get color name from brick material
 function getColorNameFromBrick(brick) {
@@ -133,6 +146,8 @@ function highlightColorButton(color) {
 function changeSelectedBricksColor(newColor) {
     const colorHex = colorMap[newColor];
     if (!colorHex) return;
+
+    interactionManager.saveState();
 
     interactionManager.selectedObjects.forEach(brick => {
         // Recursively change color for groups
@@ -317,9 +332,38 @@ duplicateLabel.style.textAlign = 'center';
 duplicateBtn.appendChild(duplicateIcon);
 duplicateBtn.appendChild(duplicateLabel);
 
+const undoBtn = document.createElement('div');
+undoBtn.id = 'undo-btn';
+undoBtn.className = 'action-button disabled';
+undoBtn.style.display = 'flex';
+undoBtn.style.flexDirection = 'column';
+undoBtn.style.alignItems = 'center';
+undoBtn.style.cursor = 'pointer';
+undoBtn.style.padding = '5px';
+undoBtn.onclick = () => {
+    if (!undoBtn.classList.contains('disabled')) {
+        interactionManager.undoLastAction();
+    }
+};
+
+const undoIcon = document.createElement('img');
+undoIcon.src = './icons/undo.png';
+undoIcon.style.width = '48px';
+undoIcon.style.height = '48px';
+undoIcon.style.marginBottom = '2px';
+
+const undoLabel = document.createElement('div');
+undoLabel.textContent = 'Undo';
+undoLabel.style.fontSize = '0.7rem';
+undoLabel.style.textAlign = 'center';
+
+undoBtn.appendChild(undoIcon);
+undoBtn.appendChild(undoLabel);
+
 modesContainer.appendChild(selectModeBtn);
 actionsContainer.appendChild(deleteBtn);
 actionsContainer.appendChild(duplicateBtn);
+actionsContainer.appendChild(undoBtn);
 
 // Insert sections before the menu
 const sidebar = document.getElementById('sidebar');
@@ -412,6 +456,9 @@ brickManager.onBricksLoaded = (brickNames, gltf) => {
 
     // Initialize UI
     updateModeUI();
+
+    // Set render brick list callback for undo
+    interactionManager.onRenderBrickList = renderBrickList;
 
     brickMenu.innerHTML = '';
 
